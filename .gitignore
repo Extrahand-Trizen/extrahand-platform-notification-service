@@ -1,0 +1,17 @@
+node_modules/
+dist/
+logs/
+*.log
+.env
+.env.local
+.env.*.local
+serviceAccountKey.json
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+
+
