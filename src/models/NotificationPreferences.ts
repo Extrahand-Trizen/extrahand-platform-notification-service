@@ -10,8 +10,9 @@ export interface INotificationPreferencesDocument extends Document, INotificatio
 const NotificationPreferencesSchema = new Schema<INotificationPreferencesDocument>({
   userId: {
     type: String,
-    required: true,
-    unique: true,
+    required: false,
+    sparse: true,  // Allow multiple null values
+    unique: true,  // But enforce uniqueness when userId exists
     index: true
   },
   transactional: {

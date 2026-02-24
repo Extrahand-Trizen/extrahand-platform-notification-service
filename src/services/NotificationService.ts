@@ -15,12 +15,28 @@ export class NotificationService {
     channel: 'push' | 'email' | 'sms'
   ): Promise<boolean> {
     try {
+      // Validate userId
+      if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+        logger.warn('Invalid userId passed to shouldSendNotification', { userId });
+        return false; // Don't send if userId is invalid
+      }
+
       let preferences = await NotificationPreferences.findOne({ userId });
 
       // Create default preferences if they don't exist
       if (!preferences) {
-        preferences = await (NotificationPreferences as any).createDefault(userId);
-        logger.info(`Created default notification preferences for user: ${userId}`);
+        try {
+          preferences = await (NotificationPreferences as any).createDefault(userId);
+          logger.info(`Created default notification preferences for user: ${userId}`);
+        } catch (error: any) {
+          // Handle duplicate key error (race condition)
+          if (error.code === 11000) {
+            logger.warn('Duplicate key error, trying to fetch existing preferences', { userId });
+            preferences = await NotificationPreferences.findOne({ userId });
+          } else {
+            throw error;
+          }
+        }
       }
 
       const categoryPrefs = preferences?.[category as keyof INotificationPreferences];
@@ -260,11 +276,36 @@ export class NotificationService {
    */
   static async getPreferences(userId: string): Promise<INotificationPreferences> {
     try {
+      // Validate userId
+      if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+        logger.warn('Invalid userId passed to getPreferences', { userId });
+        // Return default preferences without saving
+        return {
+          transactional: { email: false, push: true, sms: true },
+          taskUpdates: { email: true, push: true, sms: true },
+          taskReminders: { email: true, push: true, sms: true },
+          keywordTaskAlerts: { push: true },
+          recommendedTaskAlerts: { push: true },
+          helpfulInformation: { email: true, push: true, sms: true },
+          updatesNewsletters: { email: true, push: true, sms: true }
+        };
+      }
+
       let preferences = await NotificationPreferences.findOne({ userId });
 
       if (!preferences) {
         // Create default preferences
-        preferences = await (NotificationPreferences as any).createDefault(userId);
+        try {
+          preferences = await (NotificationPreferences as any).createDefault(userId);
+        } catch (error: any) {
+          // Handle duplicate key error
+          if (error.code === 11000) {
+            logger.warn('Duplicate key error in getPreferences, fetching existing', { userId });
+            preferences = await NotificationPreferences.findOne({ userId });
+          } else {
+            throw error;
+          }
+        }
       }
 
       return {
@@ -290,10 +331,26 @@ export class NotificationService {
     preferences: Partial<INotificationPreferences>
   ): Promise<INotificationPreferences> {
     try {
+      // Validate userId
+      if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+        logger.warn('Invalid userId passed to updatePreferences', { userId });
+        throw new Error('Invalid userId');
+      }
+
       let userPreferences = await NotificationPreferences.findOne({ userId });
 
       if (!userPreferences) {
-        userPreferences = await (NotificationPreferences as any).createDefault(userId);
+        try {
+          userPreferences = await (NotificationPreferences as any).createDefault(userId);
+        } catch (error: any) {
+          // Handle duplicate key error
+          if (error.code === 11000) {
+            logger.warn('Duplicate key error in updatePreferences, fetching existing', { userId });
+            userPreferences = await NotificationPreferences.findOne({ userId });
+          } else {
+            throw error;
+          }
+        }
       }
 
       // Update preferences
