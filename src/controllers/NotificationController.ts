@@ -137,27 +137,45 @@ export class NotificationController {
    */
   static async sendNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { userId, type, title, body, data, category } = req.body;
+      // Support both old format (single userId) and new format (recipients array)
+      const { userId, recipients, type, eventKey, title, body, data, category } = req.body;
 
-      if (!userId || !type || !title || !body) {
-        throw new BadRequestError('userId, type, title, and body are required');
+      // Accept either userId (single) or recipients (array)
+      const targetUsers = recipients && Array.isArray(recipients) ? recipients : [userId];
+      const notificationType = type || eventKey;
+
+      if (!targetUsers || targetUsers.length === 0 || !notificationType || !title || !body) {
+        throw new BadRequestError('userId (or recipients array), type (or eventKey), title, and body are required');
       }
 
-      const result = await NotificationService.sendPushNotification(userId, {
-        type,
-        title,
-        body,
-        data,
-        category
-      });
+      // Send to all target users
+      let totalSent = 0;
+      let totalFailed = 0;
+
+      for (const uid of targetUsers) {
+        try {
+          const result = await NotificationService.sendPushNotification(uid, {
+            type: notificationType,
+            title,
+            body,
+            data,
+            category
+          });
+          totalSent += result.sent || 0;
+          totalFailed += result.failed || 0;
+        } catch (error) {
+          totalFailed++;
+          logger.error('Error sending notification to user', { userId: uid, error });
+        }
+      }
 
       res.json({
-        success: result.success,
+        success: totalSent > 0,
         data: {
-          sent: result.sent,
-          failed: result.failed
+          sent: totalSent,
+          failed: totalFailed
         },
-        message: `Notification sent to ${result.sent} device(s)`
+        message: `Notification sent to ${totalSent} device(s)`
       });
     } catch (error: any) {
       logger.error('Error sending notification:', error);
