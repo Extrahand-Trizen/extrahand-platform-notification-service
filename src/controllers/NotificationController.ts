@@ -175,7 +175,7 @@ export class NotificationController {
   static async sendBatchNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Support both old format (type) and new format (eventKey)
-      const { userIds, type, eventKey, title, body, data, category, entity } = req.body;
+      const { userIds, type, eventKey, title, body, data, category } = req.body;
 
       if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
         throw new BadRequestError('userIds array is required');
@@ -192,8 +192,7 @@ export class NotificationController {
         title,
         body,
         data,
-        category,
-        entity // Pass entity for reference if available
+        category
       });
 
       res.json({
