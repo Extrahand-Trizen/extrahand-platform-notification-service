@@ -48,7 +48,7 @@ FCMTokenSchema.index({ userId: 1, platform: 1 });
 FCMTokenSchema.pre('save', async function(next) {
   if (this.isNew && this.deviceId) {
     // Remove old tokens for the same device
-    await this.constructor.deleteMany({ 
+    await (this.constructor as Model<IFCMTokenDocument>).deleteMany({ 
       userId: this.userId, 
       deviceId: this.deviceId,
       _id: { $ne: this._id }

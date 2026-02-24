@@ -3,7 +3,7 @@ import logger from '../config/logger';
 import NotificationPreferences from '../models/NotificationPreferences';
 import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
-import { BadRequestError, NotFoundError } from '../errors/AppError';
+import { NotFoundError } from '../errors/AppError';
 
 export class NotificationService {
   /**
@@ -31,7 +31,7 @@ export class NotificationService {
       }
 
       // For other categories with multiple channels
-      if ('push' in categoryPrefs  && 'email' in categoryPrefs && 'sms' in categoryPrefs) {
+      if (categoryPrefs && 'push' in categoryPrefs  && 'email' in categoryPrefs && 'sms' in categoryPrefs) {
         const channelPrefs = categoryPrefs as { email: boolean; push: boolean; sms: boolean };
         return channelPrefs[channel] === true;
       }
