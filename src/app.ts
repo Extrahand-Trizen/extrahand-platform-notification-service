@@ -17,7 +17,13 @@ export function createApp(): Application {
 
   // Security middleware
   app.use(helmet());
-  app.use(cors(getCorsConfig(env)));
+  
+  // CORS middleware - must be before routes
+  const corsConfig = getCorsConfig(env);
+  app.use(cors(corsConfig));
+  
+  // Explicit preflight OPTIONS handler
+  app.options('*', cors(corsConfig));
 
   // Body parsing middleware
   app.use(express.json({ limit: '10mb' }));

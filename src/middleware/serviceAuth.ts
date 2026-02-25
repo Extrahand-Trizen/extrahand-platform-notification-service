@@ -10,6 +10,12 @@ export function serviceAuthMiddleware(
   res: Response,
   next: NextFunction
 ): void {
+  // Skip auth for preflight requests
+  if (req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+
   try {
     const env = validateEnv();
     const serviceAuthToken = env.SERVICE_AUTH_TOKEN;

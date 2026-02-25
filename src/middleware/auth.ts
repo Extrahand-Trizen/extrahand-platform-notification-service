@@ -8,6 +8,12 @@ export async function authMiddleware(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  // Skip auth for preflight requests
+  if (req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+
   try {
     const header = req.headers.authorization || '';
     const match = /^Bearer (.+)$/.exec(header);

@@ -56,28 +56,44 @@ export function getCorsConfig(env: z.infer<typeof envSchema>) {
   ];
   
   if (env.CORS_ORIGIN) {
-    const customOrigins = env.CORS_ORIGIN.split(',').map(origin => origin.trim());
+    const customOrigins = env.CORS_ORIGIN.split(',')
+      .map(origin => origin.trim())
+      .filter(origin => origin.length > 0);
     allowedOrigins.push(...customOrigins);
+    console.log('✅ CORS custom origins loaded:', customOrigins);
   }
+  
+  // Remove duplicates
+  const uniqueOrigins = Array.from(new Set(allowedOrigins));
+  console.log('✅ CORS allowed origins:', uniqueOrigins);
   
   return {
     origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+      // Allow requests without an origin (like mobile apps, curl requests, etc)
       if (!origin) {
-        if (env.NODE_ENV === 'development') {
-          return callback(null, true);
-        }
+        console.log('✅ CORS: No origin header (possibly mobile/app request)');
         return callback(null, true);
       }
       
-      if (allowedOrigins.includes(origin)) {
+      // Log the incoming origin
+      const isAllowed = uniqueOrigins.includes(origin);
+      if (!isAllowed) {
+        console.warn(`⚠️ CORS: Origin ${origin} not in allowed list. Allowed: ${uniqueOrigins.join(', ')}`);
+      } else {
+        console.log(`✅ CORS: Origin ${origin} is allowed`);
+      }
+      
+      if (isAllowed) {
         callback(null, true);
       } else {
+        // Still allow the request but let the client know
+        console.error(`❌ CORS: Blocking origin ${origin}`);
         callback(new Error(`Origin ${origin} not allowed by CORS policy`));
       }
     },
     credentials: true,
-    optionsSuccessStatus: 204,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    optionsSuccessStatus: 200, // Changed from 204 to 200
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
     allowedHeaders: [
       'Origin',
       'X-Requested-With',
@@ -91,8 +107,12 @@ export function getCorsConfig(env: z.infer<typeof envSchema>) {
       'X-User-Id',
       'X-Service-Name'
     ],
+    exposedHeaders: [
+      'Content-Length',
+      'Access-Control-Allow-Origin',
+      'Access-Control-Allow-Credentials'
+    ],
     preflightContinue: false,
-    exposedHeaders: ['Content-Length'],
     maxAge: 86400 // 24 hours
   };
 }
