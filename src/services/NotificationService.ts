@@ -435,6 +435,245 @@ export class NotificationService {
       throw new Error(`Failed to update preferences: ${error.message}`);
     }
   }
+
+  /**
+   * ============================================================
+   * IN-APP NOTIFICATIONS (Polling)
+   * ============================================================
+   */
+
+  /**
+   * Create a single in-app notification
+   */
+  static async createInAppNotification(data: {
+    userId: string;
+    title: string;
+    body: string;
+    type?: 'info' | 'warning' | 'error' | 'success';
+    category?: string;
+    data?: Record<string, any>;
+  }): Promise<any> {
+    try {
+      const InAppNotification = (await import('../models/InAppNotification')).default;
+      
+      const notification = await InAppNotification.create({
+        userId: data.userId,
+        title: data.title,
+        body: data.body,
+        type: data.type || 'info',
+        category: data.category,
+        data: data.data,
+        read: false
+      });
+
+      logger.info(`Created in-app notification for user: ${data.userId}`, {
+        notificationId: notification._id,
+        type: data.type
+      });
+
+      return notification;
+    } catch (error: any) {
+      logger.error('Error creating in-app notification:', error);
+      throw new Error(`Failed to create in-app notification: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create batch in-app notifications for multiple users
+   */
+  static async createInAppBatchNotifications(data: {
+    userIds: string[];
+    title: string;
+    body: string;
+    type?: 'info' | 'warning' | 'error' | 'success';
+    category?: string;
+    data?: Record<string, any>;
+  }): Promise<{ total: number; created: number; failed: number }> {
+    try {
+      const InAppNotification = (await import('../models/InAppNotification')).default;
+      
+      const notifications = data.userIds.map(userId => ({
+        userId,
+        title: data.title,
+        body: data.body,
+        type: data.type || 'info',
+        category: data.category,
+        data: data.data,
+        read: false
+      }));
+
+      const result = await InAppNotification.insertMany(notifications, { ordered: false });
+
+      logger.info(`Created batch in-app notifications`, {
+        total: data.userIds.length,
+        created: result.length,
+        userIds: data.userIds.slice(0, 5).join(',') + (data.userIds.length > 5 ? '...' : '')
+      });
+
+      return {
+        total: data.userIds.length,
+        created: result.length,
+        failed: data.userIds.length - result.length
+      };
+    } catch (error: any) {
+      logger.error('Error creating batch in-app notifications:', error);
+      throw new Error(`Failed to create batch in-app notifications: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get in-app notifications for a user
+   */
+  static async getInAppNotifications(
+    userId: string,
+    limit: number = 50,
+    skip: number = 0,
+    unreadOnly: boolean = false
+  ): Promise<{
+    notifications: any[];
+    unreadCount: number;
+    hasMore: boolean;
+  }> {
+    try {
+      const InAppNotification = (await import('../models/InAppNotification')).default;
+      
+      const query = { userId };
+      if (unreadOnly) {
+        (query as any).read = false;
+      }
+
+      // Get total unread count
+      const unreadCount = await InAppNotification.countDocuments({
+        userId,
+        read: false
+      });
+
+      // Fetch notifications
+      const notifications = await InAppNotification
+        .find(query)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip)
+        .lean();
+
+      // Check if there are more notifications
+      const totalCount = await InAppNotification.countDocuments(query);
+      const hasMore = skip + limit < totalCount;
+
+      logger.info(`Fetched in-app notifications for user: ${userId}`, {
+        returned: notifications.length,
+        unreadCount,
+        hasMore
+      });
+
+      return {
+        notifications,
+        unreadCount,
+        hasMore
+      };
+    } catch (error: any) {
+      logger.error('Error fetching in-app notifications:', error);
+      throw new Error(`Failed to fetch in-app notifications: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get unread notification count for a user
+   */
+  static async getUnreadNotificationCount(userId: string): Promise<number> {
+    try {
+      const InAppNotification = (await import('../models/InAppNotification')).default;
+      
+      const count = await InAppNotification.countDocuments({
+        userId,
+        read: false
+      });
+
+      return count;
+    } catch (error: any) {
+      logger.error('Error counting unread notifications:', error);
+      throw new Error(`Failed to count unread notifications: ${error.message}`);
+    }
+  }
+
+  /**
+   * Mark a specific notification as read
+   */
+  static async markInAppNotificationAsRead(
+    notificationId: string,
+    userId: string
+  ): Promise<boolean> {
+    try {
+      const InAppNotification = (await import('../models/InAppNotification')).default;
+      
+      const result = await InAppNotification.updateOne(
+        {
+          _id: notificationId,
+          userId
+        },
+        {
+          read: true,
+          readAt: new Date()
+        }
+      );
+
+      return result.modifiedCount > 0;
+    } catch (error: any) {
+      logger.error('Error marking notification as read:', error);
+      throw new Error(`Failed to mark notification as read: ${error.message}`);
+    }
+  }
+
+  /**
+   * Mark all notifications as read for a user
+   */
+  static async markAllInAppNotificationsAsRead(userId: string): Promise<{ modifiedCount: number }> {
+    try {
+      const InAppNotification = (await import('../models/InAppNotification')).default;
+      
+      const result = await InAppNotification.updateMany(
+        {
+          userId,
+          read: false
+        },
+        {
+          read: true,
+          readAt: new Date()
+        }
+      );
+
+      logger.info(`Marked all notifications as read for user: ${userId}`, {
+        modifiedCount: result.modifiedCount
+      });
+
+      return { modifiedCount: result.modifiedCount };
+    } catch (error: any) {
+      logger.error('Error marking all notifications as read:', error);
+      throw new Error(`Failed to mark all notifications as read: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete a notification
+   */
+  static async deleteInAppNotification(
+    notificationId: string,
+    userId: string
+  ): Promise<boolean> {
+    try {
+      const InAppNotification = (await import('../models/InAppNotification')).default;
+      
+      const result = await InAppNotification.deleteOne({
+        _id: notificationId,
+        userId
+      });
+
+      return result.deletedCount > 0;
+    } catch (error: any) {
+      logger.error('Error deleting notification:', error);
+      throw new Error(`Failed to delete notification: ${error.message}`);
+    }
+  }
 }
 
 

@@ -44,6 +44,56 @@ router.post(
   asyncHandler(NotificationController.sendBatchNotification)
 );
 
+// ============================================================
+// IN-APP NOTIFICATIONS (Polling) - User endpoints
+// ============================================================
+
+router.get(
+  '/in-app',
+  authMiddleware,
+  asyncHandler(NotificationController.getInAppNotifications)
+);
+
+router.get(
+  '/in-app/unread-count',
+  authMiddleware,
+  asyncHandler(NotificationController.getUnreadCount)
+);
+
+router.patch(
+  '/in-app/:notificationId/read',
+  authMiddleware,
+  asyncHandler(NotificationController.markAsRead)
+);
+
+router.patch(
+  '/in-app/mark-all-read',
+  authMiddleware,
+  asyncHandler(NotificationController.markAllAsRead)
+);
+
+router.delete(
+  '/in-app/:notificationId',
+  authMiddleware,
+  asyncHandler(NotificationController.deleteNotification)
+);
+
+// ============================================================
+// IN-APP NOTIFICATIONS - Service endpoints
+// ============================================================
+
+router.post(
+  '/in-app/send',
+  serviceAuthMiddleware,
+  asyncHandler(NotificationController.createInAppNotification)
+);
+
+router.post(
+  '/in-app/send-batch',
+  serviceAuthMiddleware,
+  asyncHandler(NotificationController.createInAppBatchNotification)
+);
+
 export default router;
 
 

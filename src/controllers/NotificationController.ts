@@ -230,6 +230,251 @@ export class NotificationController {
       });
     }
   }
+
+  /**
+   * ============================================================
+   * IN-APP NOTIFICATIONS (Polling)
+   * ============================================================
+   */
+
+  /**
+   * GET /api/v1/notifications/in-app
+   * Fetch in-app notifications for current user
+   */
+  static async getInAppNotifications(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.uid || (req as any).userId;
+      if (!userId) {
+        throw new BadRequestError('User ID is required');
+      }
+
+      const { limit = 50, skip = 0, unreadOnly = false } = req.query;
+      const limitNum = Math.min(parseInt(limit as string) || 50, 100);
+      const skipNum = parseInt(skip as string) || 0;
+      const unreadOnlyBool = unreadOnly === 'true';
+
+      const result = await NotificationService.getInAppNotifications(
+        userId,
+        limitNum,
+        skipNum,
+        unreadOnlyBool
+      );
+
+      res.json({
+        success: true,
+        notifications: result.notifications,
+        unreadCount: result.unreadCount,
+        hasMore: result.hasMore,
+        message: 'In-app notifications fetched successfully'
+      });
+    } catch (error: any) {
+      logger.error('Error fetching in-app notifications:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to fetch in-app notifications'
+      });
+    }
+  }
+
+  /**
+   * GET /api/v1/notifications/in-app/unread-count
+   * Get count of unread in-app notifications
+   */
+  static async getUnreadCount(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.uid || (req as any).userId;
+      if (!userId) {
+        throw new BadRequestError('User ID is required');
+      }
+
+      const unreadCount = await NotificationService.getUnreadNotificationCount(userId);
+
+      res.json({
+        success: true,
+        unreadCount,
+        message: 'Unread count fetched successfully'
+      });
+    } catch (error: any) {
+      logger.error('Error fetching unread count:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to fetch unread count'
+      });
+    }
+  }
+
+  /**
+   * PATCH /api/v1/notifications/in-app/:notificationId/read
+   * Mark specific notification as read
+   */
+  static async markAsRead(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.uid || (req as any).userId;
+      const { notificationId } = req.params;
+
+      if (!userId || !notificationId) {
+        throw new BadRequestError('User ID and notification ID are required');
+      }
+
+      const success = await NotificationService.markInAppNotificationAsRead(
+        notificationId,
+        userId
+      );
+
+      if (!success) {
+        throw new BadRequestError('Notification not found or already deleted');
+      }
+
+      res.json({
+        success: true,
+        message: 'Notification marked as read'
+      });
+    } catch (error: any) {
+      logger.error('Error marking notification as read:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to mark notification as read'
+      });
+    }
+  }
+
+  /**
+   * PATCH /api/v1/notifications/in-app/mark-all-read
+   * Mark all notifications as read for current user
+   */
+  static async markAllAsRead(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.uid || (req as any).userId;
+      if (!userId) {
+        throw new BadRequestError('User ID is required');
+      }
+
+      const result = await NotificationService.markAllInAppNotificationsAsRead(userId);
+
+      res.json({
+        success: true,
+        data: {
+          modifiedCount: result.modifiedCount
+        },
+        message: `${result.modifiedCount} notification(s) marked as read`
+      });
+    } catch (error: any) {
+      logger.error('Error marking all notifications as read:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to mark all notifications as read'
+      });
+    }
+  }
+
+  /**
+   * DELETE /api/v1/notifications/in-app/:notificationId
+   * Delete specific notification
+   */
+  static async deleteNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.uid || (req as any).userId;
+      const { notificationId } = req.params;
+
+      if (!userId || !notificationId) {
+        throw new BadRequestError('User ID and notification ID are required');
+      }
+
+      const success = await NotificationService.deleteInAppNotification(
+        notificationId,
+        userId
+      );
+
+      if (!success) {
+        throw new BadRequestError('Notification not found or already deleted');
+      }
+
+      res.json({
+        success: true,
+        message: 'Notification deleted successfully'
+      });
+    } catch (error: any) {
+      logger.error('Error deleting notification:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to delete notification'
+      });
+    }
+  }
+
+  /**
+   * POST /api/v1/notifications/in-app/send
+   * Create in-app notification (service-to-service)
+   */
+  static async createInAppNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { userId, title, body, type, category, data } = req.body;
+
+      if (!userId || !title || !body) {
+        throw new BadRequestError('userId, title, and body are required');
+      }
+
+      const notification = await NotificationService.createInAppNotification({
+        userId,
+        title,
+        body,
+        type: type || 'info',
+        category,
+        data
+      });
+
+      res.status(201).json({
+        success: true,
+        data: notification,
+        message: 'In-app notification created successfully'
+      });
+    } catch (error: any) {
+      logger.error('Error creating in-app notification:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to create in-app notification'
+      });
+    }
+  }
+
+  /**
+   * POST /api/v1/notifications/in-app/send-batch
+   * Create in-app notifications for multiple users (service-to-service)
+   */
+  static async createInAppBatchNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { userIds, title, body, type, category, data } = req.body;
+
+      if (!Array.isArray(userIds) || userIds.length === 0 || !title || !body) {
+        throw new BadRequestError('userIds (array), title, and body are required');
+      }
+
+      const result = await NotificationService.createInAppBatchNotifications({
+        userIds,
+        title,
+        body,
+        type: type || 'info',
+        category,
+        data
+      });
+
+      res.status(201).json({
+        success: true,
+        data: {
+          total: result.total,
+          created: result.created,
+          failed: result.failed
+        },
+        message: `In-app notifications created for ${result.created} user(s)`
+      });
+    } catch (error: any) {
+      logger.error('Error creating batch in-app notifications:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to create batch in-app notifications'
+      });
+    }
+  }
 }
 
 
