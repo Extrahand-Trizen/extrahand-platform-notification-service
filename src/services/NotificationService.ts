@@ -39,7 +39,19 @@ export class NotificationService {
         }
       }
 
-      const categoryPrefs = preferences?.[category as keyof INotificationPreferences];
+      // If still no preferences after all attempts, allow by default
+      if (!preferences) {
+        logger.warn('No preferences found after creation attempts, allowing notification by default', { userId, category });
+        return true;
+      }
+
+      const categoryPrefs = preferences[category as keyof INotificationPreferences];
+
+      // If category doesn't exist in preferences, allow by default
+      if (!categoryPrefs) {
+        logger.warn('Category not found in preferences, allowing notification by default', { userId, category });
+        return true;
+      }
 
       // For categories that only have push (keywordTaskAlerts, recommendedTaskAlerts)
       if (category === 'keywordTaskAlerts' || category === 'recommendedTaskAlerts') {
@@ -47,7 +59,7 @@ export class NotificationService {
       }
 
       // For other categories with multiple channels
-      if (categoryPrefs && 'push' in categoryPrefs  && 'email' in categoryPrefs && 'sms' in categoryPrefs) {
+      if ('push' in categoryPrefs && 'email' in categoryPrefs && 'sms' in categoryPrefs) {
         const channelPrefs = categoryPrefs as { email: boolean; push: boolean; sms: boolean };
         return channelPrefs[channel] === true;
       }
