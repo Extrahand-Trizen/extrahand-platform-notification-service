@@ -60,34 +60,33 @@ export function getCorsConfig(env: z.infer<typeof envSchema>) {
       .map(origin => origin.trim())
       .filter(origin => origin.length > 0);
     allowedOrigins.push(...customOrigins);
-    console.log('✅ CORS custom origins loaded:', customOrigins);
+    console.log('✅ CORS custom origins loaded from env:', customOrigins);
+  } else {
+    console.log('⚠️ CORS_ORIGIN env variable not set, using defaults only');
   }
   
   // Remove duplicates
   const uniqueOrigins = Array.from(new Set(allowedOrigins));
-  console.log('✅ CORS allowed origins:', uniqueOrigins);
+  console.log('✅ CORS allowed origins (final list):', uniqueOrigins);
+  console.log('✅ Total allowed origins:', uniqueOrigins.length);
   
   return {
     origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
       // Allow requests without an origin (like mobile apps, curl requests, etc)
       if (!origin) {
-        console.log('✅ CORS: No origin header (possibly mobile/app request)');
+        console.log('✅ CORS: No origin header (mobile/app request)');
         return callback(null, true);
       }
       
       // Log the incoming origin
       const isAllowed = uniqueOrigins.includes(origin);
-      if (!isAllowed) {
-        console.warn(`⚠️ CORS: Origin ${origin} not in allowed list. Allowed: ${uniqueOrigins.join(', ')}`);
-      } else {
-        console.log(`✅ CORS: Origin ${origin} is allowed`);
-      }
       
       if (isAllowed) {
+        console.log(`✅ CORS: Origin "${origin}" is ALLOWED`);
         callback(null, true);
       } else {
-        // Still allow the request but let the client know
-        console.error(`❌ CORS: Blocking origin ${origin}`);
+        console.error(`❌ CORS: Origin "${origin}" is BLOCKED`);
+        console.error(`   Available origins: ${uniqueOrigins.join(', ')}`);
         callback(new Error(`Origin ${origin} not allowed by CORS policy`));
       }
     },
