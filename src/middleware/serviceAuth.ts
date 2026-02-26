@@ -55,7 +55,21 @@ export function serviceAuthMiddleware(
     }
 
     // Attach user ID from header if provided (for service-to-service calls)
-    const userId = req.headers['x-user-id'] as string;
+    let userId = (req.headers['x-user-id'] as string)?.trim();
+    if (!userId && req.headers.authorization) {
+      const match = /^Bearer\s+(.+)$/.exec(req.headers.authorization);
+      if (match?.[1]) {
+        try {
+          const payload = match[1].split('.')[1];
+          if (payload) {
+            const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+            userId = decoded.sub ?? decoded.uid ?? '';
+          }
+        } catch {
+          // ignore decode errors
+        }
+      }
+    }
     if (userId) {
       (req as any).userId = userId;
     }
