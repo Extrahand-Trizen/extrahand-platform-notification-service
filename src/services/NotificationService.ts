@@ -1,9 +1,11 @@
+import axios from 'axios';
 import { admin } from '../config/firebase';
 import logger from '../config/logger';
 import NotificationPreferences from '../models/NotificationPreferences';
 import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
 import { NotFoundError } from '../errors/AppError';
+import { validateEnv } from '../config/env';
 
 export class NotificationService {
   /**
@@ -15,6 +17,48 @@ export class NotificationService {
     channel: 'push' | 'email' | 'sms'
   ): Promise<boolean> {
     try {
+      const env = validateEnv();
+      const userServiceUrl = env.USER_SERVICE_URL;
+
+      if (userServiceUrl) {
+        try {
+          const response = await axios.get(
+            `${userServiceUrl}/api/v1/notification-preferences/${userId}/can-send`,
+            {
+              params: {
+                channel,
+                category,
+              },
+              headers: {
+                'X-Service-Auth': env.SERVICE_AUTH_TOKEN || '',
+                'X-Service-Name': 'notification-service',
+              },
+              timeout: 5000,
+            }
+          );
+
+          const canSend = response.data?.data?.canSend;
+          if (typeof canSend === 'boolean') {
+            return canSend;
+          }
+
+          logger.warn('User-service preference check returned invalid format', {
+            userId,
+            category,
+            channel,
+          });
+          return false;
+        } catch (error: any) {
+          logger.warn('User-service preference check failed (blocking to avoid unwanted sends)', {
+            userId,
+            category,
+            channel,
+            error: error?.message || 'Unknown error',
+          });
+          return false;
+        }
+      }
+
       // Validate userId
       if (!userId || typeof userId !== 'string' || userId.trim() === '') {
         logger.warn('Invalid userId passed to shouldSendNotification', { userId });
@@ -39,18 +83,18 @@ export class NotificationService {
         }
       }
 
-      // If still no preferences after all attempts, allow by default
+      // If still no preferences after all attempts, block to avoid unwanted sends
       if (!preferences) {
-        logger.warn('No preferences found after creation attempts, allowing notification by default', { userId, category });
-        return true;
+        logger.warn('No preferences found after creation attempts, blocking notification', { userId, category });
+        return false;
       }
 
       const categoryPrefs = preferences[category as keyof INotificationPreferences];
 
-      // If category doesn't exist in preferences, allow by default
+      // If category doesn't exist in preferences, block to avoid unwanted sends
       if (!categoryPrefs) {
-        logger.warn('Category not found in preferences, allowing notification by default', { userId, category });
-        return true;
+        logger.warn('Category not found in preferences, blocking notification', { userId, category });
+        return false;
       }
 
       // For categories that only have push (keywordTaskAlerts, recommendedTaskAlerts)
@@ -67,8 +111,8 @@ export class NotificationService {
       return false;
     } catch (error: any) {
       logger.error('Error checking notification preferences:', error);
-      // Default to allowing notifications if check fails (fail open)
-      return true;
+      // Default to blocking notifications if check fails (fail closed)
+      return false;
     }
   }
 

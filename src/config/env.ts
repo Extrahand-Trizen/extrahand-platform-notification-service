@@ -36,6 +36,7 @@ const envSchema = z.object({
   
   // Service-to-Service Communication
   SERVICE_AUTH_TOKEN: z.string().min(1, 'SERVICE_AUTH_TOKEN is required for service-to-service communication').optional(),
+  USER_SERVICE_URL: z.string().url('Invalid USER_SERVICE_URL').optional(),
 });
 
 // CORS configuration
