@@ -1,37 +1,38 @@
 import { Router } from 'express';
 import { NotificationController } from '../controllers/NotificationController';
-import { authMiddleware } from '../middleware/auth';
 import { serviceAuthMiddleware } from '../middleware/serviceAuth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { userOrServiceAuth } from '../middleware/userOrServiceAuth';
 
 const router = Router();
 
-// Public endpoints (require user auth)
+// Public endpoints (can be called either directly with user auth
+// or via API Gateway with service auth + X-User-Id)
 router.post(
   '/token',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.registerToken)
 );
 
 router.delete(
   '/token',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.removeToken)
 );
 
 router.get(
   '/preferences',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.getPreferences)
 );
 
 router.put(
   '/preferences',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.updatePreferences)
 );
 
-// Service-to-service endpoints (require service auth)
+// Service-to-service endpoints (require service auth only)
 router.post(
   '/send',
   serviceAuthMiddleware,
@@ -50,31 +51,31 @@ router.post(
 
 router.get(
   '/in-app',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.getInAppNotifications)
 );
 
 router.get(
   '/in-app/unread-count',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.getUnreadCount)
 );
 
 router.patch(
   '/in-app/:notificationId/read',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.markAsRead)
 );
 
 router.patch(
   '/in-app/mark-all-read',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.markAllAsRead)
 );
 
 router.delete(
   '/in-app/:notificationId',
-  authMiddleware,
+  userOrServiceAuth,
   asyncHandler(NotificationController.deleteNotification)
 );
 
