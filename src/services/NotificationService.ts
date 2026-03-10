@@ -498,6 +498,18 @@ export class NotificationService {
     data?: Record<string, any>;
   }): Promise<any> {
     try {
+      const category = (data.category || 'taskUpdates') as keyof INotificationPreferences;
+      const canSend = await this.shouldSendNotification(data.userId, category, 'push');
+
+      if (!canSend) {
+        logger.info('In-app notification skipped - user preferences disabled', {
+          userId: data.userId,
+          category,
+          type: data.type || 'info'
+        });
+        return null;
+      }
+
       const InAppNotification = (await import('../models/InAppNotification')).default;
       
       const notification = await InAppNotification.create({
@@ -535,8 +547,33 @@ export class NotificationService {
   }): Promise<{ total: number; created: number; failed: number }> {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
+      const category = (data.category || 'taskUpdates') as keyof INotificationPreferences;
+
+      const preferenceResults = await Promise.all(
+        data.userIds.map(async (userId) => {
+          const canSend = await this.shouldSendNotification(userId, category, 'push');
+          return { userId, canSend };
+        })
+      );
+
+      const allowedUserIds = preferenceResults
+        .filter((result) => result.canSend)
+        .map((result) => result.userId);
+
+      if (allowedUserIds.length === 0) {
+        logger.info('Batch in-app notifications skipped - all users have disabled preferences', {
+          totalRequested: data.userIds.length,
+          category,
+          type: data.type || 'info'
+        });
+        return {
+          total: data.userIds.length,
+          created: 0,
+          failed: data.userIds.length
+        };
+      }
       
-      const notifications = data.userIds.map(userId => ({
+      const notifications = allowedUserIds.map(userId => ({
         userId,
         title: data.title,
         body: data.body,
@@ -551,7 +588,8 @@ export class NotificationService {
       logger.info(`Created batch in-app notifications`, {
         total: data.userIds.length,
         created: result.length,
-        userIds: data.userIds.slice(0, 5).join(',') + (data.userIds.length > 5 ? '...' : '')
+        blockedByPreferences: data.userIds.length - allowedUserIds.length,
+        userIds: allowedUserIds.slice(0, 5).join(',') + (allowedUserIds.length > 5 ? '...' : '')
       });
 
       return {

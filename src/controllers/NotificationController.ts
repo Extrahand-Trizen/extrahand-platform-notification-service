@@ -423,6 +423,15 @@ export class NotificationController {
         data
       });
 
+      if (!notification) {
+        res.status(200).json({
+          success: true,
+          data: null,
+          message: 'In-app notification skipped due to user preferences'
+        });
+        return;
+      }
+
       res.status(201).json({
         success: true,
         data: notification,
