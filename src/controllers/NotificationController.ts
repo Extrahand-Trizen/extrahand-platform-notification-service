@@ -148,33 +148,21 @@ export class NotificationController {
         throw new BadRequestError('userId (or recipients array), type (or eventKey), title, and body are required');
       }
 
-      // Send to all target users — both push AND in-app, each gated by preference checks
+      // Send to all target users
       let totalSent = 0;
       let totalFailed = 0;
 
       for (const uid of targetUsers) {
         try {
-          // ── Push notification (checks push.enabled + push.<category>) ──────────
-          const pushResult = await NotificationService.sendPushNotification(uid, {
+          const result = await NotificationService.sendPushNotification(uid, {
             type: notificationType,
             title,
             body,
             data,
             category
           });
-          totalSent += pushResult.sent || 0;
-          totalFailed += pushResult.failed || 0;
-
-          // ── In-app notification (checks push.enabled + push.<category>) ────────
-          // In-app uses the same 'push' channel preference gate
-          await NotificationService.createInAppNotification({
-            userId: uid,
-            title,
-            body,
-            type: 'info',
-            category,
-            data
-          });
+          totalSent += result.sent || 0;
+          totalFailed += result.failed || 0;
         } catch (error) {
           totalFailed++;
           logger.error('Error sending notification to user', { userId: uid, error });
@@ -217,8 +205,7 @@ export class NotificationController {
         throw new BadRequestError('type (or eventKey), title, and body are required');
       }
 
-      // ── Push notifications (each user gated by push.enabled + push.<category>) ─
-      const pushResult = await NotificationService.sendToMultipleUsers(userIds, {
+      const result = await NotificationService.sendToMultipleUsers(userIds, {
         type: notificationType,
         title,
         body,
@@ -226,28 +213,14 @@ export class NotificationController {
         category
       });
 
-      // ── In-app notifications (each user gated by push.enabled + push.<category>) ─
-      const inAppResult = await NotificationService.createInAppBatchNotifications({
-        userIds,
-        title,
-        body,
-        type: 'info',
-        category,
-        data
-      });
-
       res.json({
         success: true,
         data: {
-          total: pushResult.total,
-          sent: pushResult.sent,
-          failed: pushResult.failed,
-          inApp: {
-            created: inAppResult.created,
-            failed: inAppResult.failed
-          }
+          total: result.total,
+          sent: result.sent,
+          failed: result.failed
         },
-        message: `Notifications sent to ${pushResult.sent} user(s)`
+        message: `Notifications sent to ${result.sent} user(s)`
       });
     } catch (error: any) {
       logger.error('Error sending batch notification:', error);

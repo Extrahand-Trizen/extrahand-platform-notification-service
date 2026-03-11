@@ -89,19 +89,6 @@ export class NotificationService {
         return false;
       }
 
-      // ── Step 1: Check master channel toggle (push.enabled / email.enabled) ───────
-      // This mirrors the user-service's `preferences[channel].enabled` check.
-      // If the whole channel is disabled, no notification in that channel should go out.
-      if (channel === 'push' && (preferences as any).pushEnabled === false) {
-        logger.info('Push notification blocked - master push toggle is OFF', { userId, category });
-        return false;
-      }
-      if (channel === 'email' && (preferences as any).emailEnabled === false) {
-        logger.info('Email notification blocked - master email toggle is OFF', { userId, category });
-        return false;
-      }
-
-      // ── Step 2: Check subcategory toggle ───────────────────────────────────────
       const categoryPrefs = preferences[category as keyof INotificationPreferences];
 
       // If category doesn't exist in preferences, block to avoid unwanted sends
