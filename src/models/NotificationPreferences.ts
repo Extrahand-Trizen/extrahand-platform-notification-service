@@ -3,6 +3,10 @@ import { NotificationPreferences as INotificationPreferences } from '../types';
 
 export interface INotificationPreferencesDocument extends Document, INotificationPreferences {
   userId: string;
+  /** Master toggle for the push channel (mirrors user-service push.enabled) */
+  pushEnabled?: boolean;
+  /** Master toggle for the email channel (mirrors user-service email.enabled) */
+  emailEnabled?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -15,6 +19,9 @@ const NotificationPreferencesSchema = new Schema<INotificationPreferencesDocumen
     unique: true,  // But enforce uniqueness when userId exists
     index: true
   },
+  // Master channel toggles — mirrors user-service push.enabled / email.enabled
+  pushEnabled: { type: Boolean, default: true },
+  emailEnabled: { type: Boolean, default: true },
   transactional: {
     email: { type: Boolean, default: false },
     push: { type: Boolean, default: true }, // Required for transactional
@@ -54,6 +61,8 @@ const NotificationPreferencesSchema = new Schema<INotificationPreferencesDocumen
 NotificationPreferencesSchema.statics.createDefault = async function(userId: string) {
   return this.create({
     userId,
+    pushEnabled: true,
+    emailEnabled: true,
     transactional: { email: false, push: true, sms: true },
     taskUpdates: { email: true, push: true, sms: true },
     taskReminders: { email: true, push: true, sms: true },
