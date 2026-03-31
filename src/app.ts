@@ -26,7 +26,7 @@ export function createApp(): Application {
   app.options('*', cors(corsConfig));
 
   // Body parsing middleware
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '10mb', strict: false }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   // Compression
