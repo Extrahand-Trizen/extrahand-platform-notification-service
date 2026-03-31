@@ -42,20 +42,18 @@ export class NotificationService {
             return canSend;
           }
 
-          logger.warn('User-service preference check returned invalid format', {
+          logger.warn('User-service preference check returned invalid format, falling back to local prefs', {
             userId,
             category,
             channel,
           });
-          return false;
         } catch (error: any) {
-          logger.warn('User-service preference check failed (blocking to avoid unwanted sends)', {
+          logger.warn('User-service preference check failed, falling back to local prefs', {
             userId,
             category,
             channel,
             error: error?.message || 'Unknown error',
           });
-          return false;
         }
       }
 
