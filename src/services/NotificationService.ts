@@ -337,7 +337,7 @@ export class NotificationService {
         logger.warn('Invalid userId passed to getPreferences', { userId });
         // Return default preferences without saving
         return {
-          transactional: { email: false, push: true, sms: true },
+          payments: { email: true, push: true, sms: true },
           taskUpdates: { email: true, push: true, sms: true },
           taskReminders: { email: true, push: true, sms: true },
           keywordTaskAlerts: { push: true },
@@ -365,7 +365,7 @@ export class NotificationService {
       }
 
       return {
-        transactional: preferences?.transactional || { email: false, push: true, sms: true },
+        payments: preferences?.payments || { email: true, push: true, sms: true },
         taskUpdates: preferences?.taskUpdates || { email: true, push: true, sms: true },
         taskReminders: preferences?.taskReminders || { email: true, push: true, sms: true },
         keywordTaskAlerts: preferences?.keywordTaskAlerts || { push: true },
@@ -410,13 +410,11 @@ export class NotificationService {
       }
 
       // Update preferences
-      if (preferences.transactional) {
-        userPreferences!.transactional = {
-          ...userPreferences!.transactional,
-          ...preferences.transactional
+      if (preferences.payments) {
+        userPreferences!.payments = {
+          ...userPreferences!.payments,
+          ...preferences.payments
         };
-        // Ensure push is always true for transactional
-        userPreferences!.transactional.push = true;
       }
 
       if (preferences.taskUpdates) {
@@ -466,7 +464,7 @@ export class NotificationService {
       logger.info(`Updated notification preferences for user: ${userId}`);
 
       return {
-        transactional: userPreferences?.transactional || { email: false, push: true, sms: true },
+        payments: userPreferences?.payments || { email: true, push: true, sms: true },
         taskUpdates: userPreferences?.taskUpdates || { email: true, push: true, sms: true },
         taskReminders: userPreferences?.taskReminders || { email: true, push: true, sms: true },
         keywordTaskAlerts: userPreferences?.keywordTaskAlerts || { push: true },

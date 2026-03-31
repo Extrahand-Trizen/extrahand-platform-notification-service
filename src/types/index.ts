@@ -9,7 +9,7 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export interface NotificationPreferences {
-  transactional: { email: boolean; push: boolean; sms: boolean };
+  payments: { email: boolean; push: boolean; sms: boolean };
   taskUpdates: { email: boolean; push: boolean; sms: boolean };
   taskReminders: { email: boolean; push: boolean; sms: boolean };
   keywordTaskAlerts: { push: boolean };

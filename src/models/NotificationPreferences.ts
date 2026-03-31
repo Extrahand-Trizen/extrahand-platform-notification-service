@@ -22,9 +22,9 @@ const NotificationPreferencesSchema = new Schema<INotificationPreferencesDocumen
   // Master channel toggles — mirrors user-service push.enabled / email.enabled
   pushEnabled: { type: Boolean, default: true },
   emailEnabled: { type: Boolean, default: true },
-  transactional: {
-    email: { type: Boolean, default: false },
-    push: { type: Boolean, default: true }, // Required for transactional
+  payments: {
+    email: { type: Boolean, default: true },
+    push: { type: Boolean, default: true },
     sms: { type: Boolean, default: true }
   },
   taskUpdates: {
@@ -63,7 +63,7 @@ NotificationPreferencesSchema.statics.createDefault = async function(userId: str
     userId,
     pushEnabled: true,
     emailEnabled: true,
-    transactional: { email: false, push: true, sms: true },
+    payments: { email: true, push: true, sms: true },
     taskUpdates: { email: true, push: true, sms: true },
     taskReminders: { email: true, push: true, sms: true },
     keywordTaskAlerts: { push: true },
