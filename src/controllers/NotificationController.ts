@@ -409,6 +409,17 @@ export class NotificationController {
   static async createInAppNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { userId, title, body, type, category, data } = req.body;
+      const sourceService = req.headers['x-service-name'];
+
+      logger.info('[NotificationController.createInAppNotification] Request received', {
+        sourceService,
+        userId,
+        type: type || 'info',
+        category: category || 'taskUpdates',
+        title,
+        hasData: Boolean(data),
+        taskId: data?.taskId,
+      });
 
       if (!userId || !title || !body) {
         throw new BadRequestError('userId, title, and body are required');
@@ -424,6 +435,12 @@ export class NotificationController {
       });
 
       if (!notification) {
+        logger.info('[NotificationController.createInAppNotification] Notification skipped', {
+          sourceService,
+          userId,
+          category: category || 'taskUpdates',
+          reason: 'user preferences disabled',
+        });
         res.status(200).json({
           success: true,
           data: null,
@@ -431,6 +448,13 @@ export class NotificationController {
         });
         return;
       }
+
+      logger.info('[NotificationController.createInAppNotification] Notification created', {
+        sourceService,
+        userId,
+        notificationId: notification?._id,
+        category: category || 'taskUpdates',
+      });
 
       res.status(201).json({
         success: true,

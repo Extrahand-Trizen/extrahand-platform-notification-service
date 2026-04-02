@@ -497,6 +497,15 @@ export class NotificationService {
       const category = (data.category || 'taskUpdates') as keyof INotificationPreferences;
       const canSend = await this.shouldSendNotification(data.userId, category, 'push');
 
+      logger.info('[NotificationService.createInAppNotification] Preference decision', {
+        userId: data.userId,
+        category,
+        channel: 'push',
+        canSend,
+        type: data.type || 'info',
+        taskId: data.data?.taskId,
+      });
+
       if (!canSend) {
         logger.info('In-app notification skipped - user preferences disabled', {
           userId: data.userId,
