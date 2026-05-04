@@ -74,6 +74,12 @@ router.patch(
 );
 
 router.delete(
+  '/in-app',
+  userOrServiceAuth,
+  asyncHandler(NotificationController.deleteAllNotifications)
+);
+
+router.delete(
   '/in-app/:notificationId',
   userOrServiceAuth,
   asyncHandler(NotificationController.deleteNotification)

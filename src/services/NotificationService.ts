@@ -761,6 +761,28 @@ export class NotificationService {
       throw new Error(`Failed to delete notification: ${error.message}`);
     }
   }
+
+  /**
+   * Delete all in-app notifications for a user
+   */
+  static async deleteAllInAppNotifications(
+    userId: string
+  ): Promise<{ deletedCount: number }> {
+    try {
+      const InAppNotification = (await import('../models/InAppNotification')).default;
+
+      const result = await InAppNotification.deleteMany({ userId });
+
+      logger.info(`Deleted all in-app notifications for user: ${userId}`, {
+        deletedCount: result.deletedCount ?? 0,
+      });
+
+      return { deletedCount: result.deletedCount ?? 0 };
+    } catch (error: any) {
+      logger.error('Error deleting all notifications:', error);
+      throw new Error(`Failed to delete all notifications: ${error.message}`);
+    }
+  }
 }
 
 

@@ -403,6 +403,35 @@ export class NotificationController {
   }
 
   /**
+   * DELETE /api/v1/notifications/in-app
+   * Delete all notifications for current user
+   */
+  static async deleteAllNotifications(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.uid || (req as any).userId;
+      if (!userId) {
+        throw new BadRequestError('User ID is required');
+      }
+
+      const result = await NotificationService.deleteAllInAppNotifications(userId);
+
+      res.json({
+        success: true,
+        data: {
+          deletedCount: result.deletedCount
+        },
+        message: `${result.deletedCount} notification(s) cleared`
+      });
+    } catch (error: any) {
+      logger.error('Error deleting all notifications:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to clear notifications'
+      });
+    }
+  }
+
+  /**
    * POST /api/v1/notifications/in-app/send
    * Create in-app notification (service-to-service)
    */
