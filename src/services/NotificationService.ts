@@ -16,6 +16,11 @@ export class NotificationService {
     category: keyof INotificationPreferences,
     channel: 'push' | 'email' | 'sms'
   ): Promise<boolean> {
+    // Transactional notifications (OTPs, payment confirmations, etc.) are always sent
+    if ((category as string) === 'transactional') {
+      return true;
+    }
+
     try {
       const env = validateEnv();
       const userServiceUrl = env.USER_SERVICE_URL;
@@ -495,7 +500,11 @@ export class NotificationService {
   }): Promise<any> {
     try {
       const category = (data.category || 'taskUpdates') as keyof INotificationPreferences;
-      const canSend = await this.shouldSendNotification(data.userId, category, 'push');
+
+      // Transactional notifications bypass preference checks
+      const canSend = (data.category === 'transactional')
+        ? true
+        : await this.shouldSendNotification(data.userId, category, 'push');
 
       logger.info('[NotificationService.createInAppNotification] Preference decision', {
         userId: data.userId,
