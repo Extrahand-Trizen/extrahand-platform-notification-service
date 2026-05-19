@@ -6,11 +6,7 @@ import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
 import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
-
-/** Must match ADPT4EH android res/raw and Notifee channel in notificationService.ts */
-const PUSH_ANDROID_CHANNEL_ID = 'extrahand_alerts_v2';
-const PUSH_NOTIFICATION_SOUND_ANDROID = 'urgent_notify_single_ring';
-const PUSH_NOTIFICATION_SOUND_IOS = 'urgent_notify_single_ring.wav';
+import { buildPushSoundPayload } from '../utils/pushSound.js';
 
 export class NotificationService {
   /**
@@ -161,31 +157,29 @@ export class NotificationService {
         return { success: true, sent: 0, failed: 0 };
       }
 
+      const pushData: Record<string, unknown> = {
+        type: notification.type,
+        eventKey: notification.type,
+        category: notification.category,
+        ...(notification.data || {}),
+      };
+
+      const soundPayload = buildPushSoundPayload({
+        type: notification.type,
+        category: notification.category,
+        data: pushData,
+      });
+
       // Prepare FCM message
       const message = {
         notification: {
           title: notification.title,
           body: notification.body
         },
-        data: {
-          type: notification.type,
-          ...(notification.data || {})
-        },
-        android: {
-          priority: 'high' as const,
-          notification: {
-            sound: PUSH_NOTIFICATION_SOUND_ANDROID,
-            channelId: PUSH_ANDROID_CHANNEL_ID
-          }
-        },
-        apns: {
-          payload: {
-            aps: {
-              sound: PUSH_NOTIFICATION_SOUND_IOS,
-              badge: 1
-            }
-          }
-        }
+        data: Object.fromEntries(
+          Object.entries(pushData).map(([k, v]) => [k, v == null ? '' : String(v)]),
+        ),
+        ...soundPayload,
       };
 
       // Send to all tokens
