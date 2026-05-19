@@ -7,6 +7,11 @@ import { NotificationPayload, NotificationPreferences as INotificationPreference
 import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
 
+/** Must match ADPT4EH android res/raw and Notifee channel in notificationService.ts */
+const PUSH_ANDROID_CHANNEL_ID = 'extrahand_alerts_v2';
+const PUSH_NOTIFICATION_SOUND_ANDROID = 'urgent_notify_single_ring';
+const PUSH_NOTIFICATION_SOUND_IOS = 'urgent_notify_single_ring.wav';
+
 export class NotificationService {
   /**
    * Check if notification should be sent based on user preferences
@@ -169,14 +174,14 @@ export class NotificationService {
         android: {
           priority: 'high' as const,
           notification: {
-            sound: 'default',
-            channelId: 'default'
+            sound: PUSH_NOTIFICATION_SOUND_ANDROID,
+            channelId: PUSH_ANDROID_CHANNEL_ID
           }
         },
         apns: {
           payload: {
             aps: {
-              sound: 'default',
+              sound: PUSH_NOTIFICATION_SOUND_IOS,
               badge: 1
             }
           }
