@@ -6,7 +6,7 @@ import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
 import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
-import { buildPushSoundPayload } from '../utils/pushSound.js';
+import { buildPushSoundPayload } from '../utils/pushSound';
 
 export class NotificationService {
   /**
