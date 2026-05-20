@@ -10,6 +10,21 @@ import { buildPushSoundPayload } from '../utils/pushSound.js';
 
 export class NotificationService {
   /**
+   * OTP, payments, and other critical alerts must always appear in-app
+   * even when the category is not in the user's preference schema.
+   */
+  private static isMandatoryInAppNotification(
+    category?: string,
+    data?: Record<string, any>
+  ): boolean {
+    const cat = String(category || '').trim().toLowerCase();
+    if (cat === 'transactional' || cat === 'system') return true;
+    if (String(data?.otpType || '').trim() === 'task_start') return true;
+    if (data?.mandatory === true) return true;
+    return false;
+  }
+
+  /**
    * Check if notification should be sent based on user preferences
    */
   static async shouldSendNotification(
@@ -494,13 +509,17 @@ export class NotificationService {
   }): Promise<any> {
     try {
       const category = (data.category || 'taskUpdates') as keyof INotificationPreferences;
-      const canSend = await this.shouldSendNotification(data.userId, category, 'push');
+      const mandatory = this.isMandatoryInAppNotification(data.category, data.data);
+      const canSend = mandatory
+        ? true
+        : await this.shouldSendNotification(data.userId, category, 'push');
 
       logger.info('[NotificationService.createInAppNotification] Preference decision', {
         userId: data.userId,
         category,
         channel: 'push',
         canSend,
+        mandatory,
         type: data.type || 'info',
         taskId: data.data?.taskId,
       });
@@ -552,10 +571,13 @@ export class NotificationService {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
       const category = (data.category || 'taskUpdates') as keyof INotificationPreferences;
+      const mandatory = this.isMandatoryInAppNotification(data.category, data.data);
 
       const preferenceResults = await Promise.all(
         data.userIds.map(async (userId) => {
-          const canSend = await this.shouldSendNotification(userId, category, 'push');
+          const canSend = mandatory
+            ? true
+            : await this.shouldSendNotification(userId, category, 'push');
           return { userId, canSend };
         })
       );
