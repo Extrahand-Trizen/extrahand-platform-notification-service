@@ -98,7 +98,14 @@ export class NotificationService {
       }
 
       // If still no preferences after all attempts, block to avoid unwanted sends
+      // Exception: chat messages (CHAT_MESSAGE / taskUpdates) are always allowed
+      // because blocking them silently breaks the core messaging feature.
       if (!preferences) {
+        const isChatCategory = String(category || '').toLowerCase() === 'taskupdates';
+        if (isChatCategory) {
+          logger.warn('No preferences found — allowing chat notification (fail-open)', { userId, category });
+          return true;
+        }
         logger.warn('No preferences found after creation attempts, blocking notification', { userId, category });
         return false;
       }
@@ -106,7 +113,13 @@ export class NotificationService {
       const categoryPrefs = preferences[category as keyof INotificationPreferences];
 
       // If category doesn't exist in preferences, block to avoid unwanted sends
+      // Exception: taskUpdates (chat messages) are always allowed
       if (!categoryPrefs) {
+        const isChatCategory = String(category || '').toLowerCase() === 'taskupdates';
+        if (isChatCategory) {
+          logger.warn('Category not found in preferences — allowing chat notification (fail-open)', { userId, category });
+          return true;
+        }
         logger.warn('Category not found in preferences, blocking notification', { userId, category });
         return false;
       }
@@ -125,7 +138,12 @@ export class NotificationService {
       return false;
     } catch (error: any) {
       logger.error('Error checking notification preferences:', error);
-      // Default to blocking notifications if check fails (fail closed)
+      // Fail open for push/taskUpdates — chat messages must always get through.
+      // For other channels/categories, fail closed to avoid spam.
+      if (channel === 'push' && String(category || '').toLowerCase() === 'taskupdates') {
+        logger.warn('shouldSendNotification: failing open for push/taskUpdates after error', { userId, category });
+        return true;
+      }
       return false;
     }
   }
