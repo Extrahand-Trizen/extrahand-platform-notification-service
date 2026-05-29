@@ -33,6 +33,11 @@ export class NotificationService {
     channel: 'push' | 'email' | 'sms'
   ): Promise<boolean> {
     try {
+      const normalizedCategory = String(category || '').trim().toLowerCase();
+      const isTaskDiscoveryCategory =
+        normalizedCategory === 'recommendedtaskalerts' ||
+        normalizedCategory === 'keywordtaskalerts';
+
       const env = validateEnv();
       const userServiceUrl = env.USER_SERVICE_URL;
 
@@ -101,9 +106,13 @@ export class NotificationService {
       // Exception: chat messages (CHAT_MESSAGE / taskUpdates) are always allowed
       // because blocking them silently breaks the core messaging feature.
       if (!preferences) {
-        const isChatCategory = String(category || '').toLowerCase() === 'taskupdates';
-        if (isChatCategory) {
-          logger.warn('No preferences found — allowing chat notification (fail-open)', { userId, category });
+        const isChatCategory = normalizedCategory === 'taskupdates';
+        if (isChatCategory || (channel === 'push' && isTaskDiscoveryCategory)) {
+          logger.warn('No preferences found — allowing notification (fail-open)', {
+            userId,
+            category,
+            channel,
+          });
           return true;
         }
         logger.warn('No preferences found after creation attempts, blocking notification', { userId, category });
@@ -115,9 +124,13 @@ export class NotificationService {
       // If category doesn't exist in preferences, block to avoid unwanted sends
       // Exception: taskUpdates (chat messages) are always allowed
       if (!categoryPrefs) {
-        const isChatCategory = String(category || '').toLowerCase() === 'taskupdates';
-        if (isChatCategory) {
-          logger.warn('Category not found in preferences — allowing chat notification (fail-open)', { userId, category });
+        const isChatCategory = normalizedCategory === 'taskupdates';
+        if (isChatCategory || (channel === 'push' && isTaskDiscoveryCategory)) {
+          logger.warn('Category not found in preferences — allowing notification (fail-open)', {
+            userId,
+            category,
+            channel,
+          });
           return true;
         }
         logger.warn('Category not found in preferences, blocking notification', { userId, category });
@@ -138,10 +151,19 @@ export class NotificationService {
       return false;
     } catch (error: any) {
       logger.error('Error checking notification preferences:', error);
-      // Fail open for push/taskUpdates — chat messages must always get through.
-      // For other channels/categories, fail closed to avoid spam.
-      if (channel === 'push' && String(category || '').toLowerCase() === 'taskupdates') {
-        logger.warn('shouldSendNotification: failing open for push/taskUpdates after error', { userId, category });
+      const normalizedCategory = String(category || '').trim().toLowerCase();
+      const shouldFailOpenForPush =
+        normalizedCategory === 'taskupdates' ||
+        normalizedCategory === 'recommendedtaskalerts' ||
+        normalizedCategory === 'keywordtaskalerts';
+
+      // Fail open for key real-time channels so task discovery/chat never silently drops.
+      // Other channels/categories remain fail-closed to avoid spam.
+      if (channel === 'push' && shouldFailOpenForPush) {
+        logger.warn('shouldSendNotification: failing open for push after preference-check error', {
+          userId,
+          category,
+        });
         return true;
       }
       return false;
