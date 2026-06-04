@@ -5,8 +5,9 @@
 
 export const PUSH_NOTIFICATION_SOUND_ANDROID = 'urgent_notify_single_ring';
 export const PUSH_NOTIFICATION_SOUND_IOS = 'urgent_notify_single_ring.wav';
-export const PUSH_ANDROID_MATCH_CHANNEL_ID = 'extrahand_match_alerts';
-export const PUSH_ANDROID_NEARBY_SKILL_CHANNEL_ID = 'extrahand_nearby_skill_alerts';
+export const PUSH_ANDROID_MATCH_CHANNEL_ID = 'extrahand_match_alerts_v2';
+export const PUSH_ANDROID_NEARBY_CHANNEL_ID = 'extrahand_nearby_alerts_v2';
+export const PUSH_ANDROID_NEARBY_SKILL_CHANNEL_ID = 'extrahand_nearby_skill_alerts_v2';
 
 const CUSTOM_SOUND_EVENT_KEYS = new Set([
   'TASK_CREATED_RECOMMENDED',
@@ -51,12 +52,22 @@ export function buildPushSoundPayload(input: {
     typeof data.locationLabel === 'string' ||
     String(data.title ?? '').toLowerCase().includes('nearby') ||
     String(data.body ?? '').toLowerCase().includes('nearby');
+  const hasSkillMatchContext =
+    typeof data.skillMatchCategory === 'string' ||
+    data.skillMatch === true ||
+    data.skillMatch === 'true' ||
+    String(data.title ?? '').toLowerCase().includes('skill');
 
   if (usesCustomPushSound(input)) {
-    const channelId =
-      eventKey === 'TASK_NEARBY' || (eventKey === 'TASK_CREATED_RECOMMENDED' && hasNearbyContext)
-        ? PUSH_ANDROID_NEARBY_SKILL_CHANNEL_ID
-        : PUSH_ANDROID_MATCH_CHANNEL_ID;
+    let channelId = PUSH_ANDROID_MATCH_CHANNEL_ID;
+    if (eventKey === 'TASK_NEARBY') {
+      channelId =
+        hasSkillMatchContext || hasNearbyContext
+          ? PUSH_ANDROID_NEARBY_SKILL_CHANNEL_ID
+          : PUSH_ANDROID_NEARBY_CHANNEL_ID;
+    } else if (eventKey === 'TASK_CREATED_RECOMMENDED' && (hasNearbyContext || hasSkillMatchContext)) {
+      channelId = PUSH_ANDROID_NEARBY_SKILL_CHANNEL_ID;
+    }
 
     return {
       android: {

@@ -154,12 +154,24 @@ export class NotificationController {
 
       for (const uid of targetUsers) {
         try {
+          const mergedData = {
+            ...(data && typeof data === 'object' ? data : {}),
+            eventKey: notificationType,
+            event_key: notificationType,
+            title,
+            body,
+            entityType:
+              (data && typeof data === 'object' && (data as Record<string, unknown>).entityType) ||
+              (data && typeof data === 'object' && (data as Record<string, unknown>).entity_type) ||
+              'task',
+          };
+
           const result = await NotificationService.sendPushNotification(uid, {
             type: notificationType,
             title,
             body,
-            data,
-            category
+            data: mergedData,
+            category,
           });
           totalSent += result.sent || 0;
           totalFailed += result.failed || 0;
@@ -205,12 +217,24 @@ export class NotificationController {
         throw new BadRequestError('type (or eventKey), title, and body are required');
       }
 
+      const mergedData = {
+        ...(data && typeof data === 'object' ? data : {}),
+        eventKey: notificationType,
+        event_key: notificationType,
+        title,
+        body,
+        entityType:
+          (data && typeof data === 'object' && (data as Record<string, unknown>).entityType) ||
+          (data && typeof data === 'object' && (data as Record<string, unknown>).entity_type) ||
+          'task',
+      };
+
       const result = await NotificationService.sendToMultipleUsers(userIds, {
         type: notificationType,
         title,
         body,
-        data,
-        category
+        data: mergedData,
+        category,
       });
 
       res.json({

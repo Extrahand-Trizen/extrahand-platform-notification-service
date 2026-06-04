@@ -216,6 +216,8 @@ export class NotificationService {
         type: notification.type,
         eventKey: notification.type,
         category: notification.category,
+        title: notification.title,
+        body: notification.body,
         ...(notification.data || {}),
       };
 
