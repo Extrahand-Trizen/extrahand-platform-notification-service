@@ -28,7 +28,10 @@ export function serviceAuthMiddleware(
       return;
     }
 
-    const providedToken = req.headers['x-service-auth'] as string;
+    // Standard: X-Service-Auth. Legacy user-service badge calls used x-service-token.
+    const providedToken =
+      (req.headers['x-service-auth'] as string) ||
+      (req.headers['x-service-token'] as string);
 
     if (!providedToken) {
       res.status(401).json({

@@ -7,6 +7,7 @@ import { NotificationPayload, NotificationPreferences as INotificationPreference
 import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
 import { buildPushSoundPayload } from '../utils/pushSound';
+import { fcmCircuit } from '../utils/CircuitBreaker';
 
 export class NotificationService {
   /**
@@ -237,12 +238,24 @@ export class NotificationService {
         ...soundPayload,
       };
 
-      // Send to all tokens
+      // Send to all tokens (circuit breaker — push failures must not break callers)
       const tokenStrings = tokens.map(t => t.token);
-      const response = await admin.messaging().sendEachForMulticast({
-        tokens: tokenStrings,
-        ...message
-      });
+      const response = await fcmCircuit.runSafe(
+        () =>
+          admin.messaging().sendEachForMulticast({
+            tokens: tokenStrings,
+            ...message,
+          }),
+        null
+      );
+
+      if (!response) {
+        logger.warn('Push notification skipped (FCM circuit open or provider error)', {
+          userId,
+          type: notification.type,
+        });
+        return { success: false, sent: 0, failed: tokenStrings.length };
+      }
 
       // Update lastActive for successful tokens
       const successfulTokens = response.responses
@@ -287,8 +300,8 @@ export class NotificationService {
         failed: response.failureCount
       };
     } catch (error: any) {
-      logger.error('Error sending push notification:', error);
-      throw new Error(`Failed to send push notification: ${error.message}`);
+      logger.error('Error sending push notification (non-fatal):', error);
+      return { success: false, sent: 0, failed: 0 };
     }
   }
 
