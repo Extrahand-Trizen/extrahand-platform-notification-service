@@ -6,7 +6,7 @@ import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
 import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
-import { buildPushSoundPayload } from '../utils/pushSound';
+import { buildPushSoundPayload, usesCustomPushSound } from '../utils/pushSound';
 
 export class NotificationService {
   /**
@@ -227,17 +227,42 @@ export class NotificationService {
         data: pushData,
       });
 
-      // Prepare FCM message
-      const message = {
-        notification: {
-          title: notification.title,
-          body: notification.body
-        },
-        data: Object.fromEntries(
-          Object.entries(pushData).map(([k, v]) => [k, v == null ? '' : String(v)]),
-        ),
-        ...soundPayload,
-      };
+      const stringifiedData = Object.fromEntries(
+        Object.entries(pushData).map(([k, v]) => [k, v == null ? '' : String(v)]),
+      );
+
+      const playCustomSound = usesCustomPushSound({
+        type: notification.type,
+        category: notification.category,
+        data: pushData,
+      });
+
+      // Data-only for custom-sound alerts so the mobile app displays via Notifee
+      // with the correct Android channel + bundled sound (OS-handled notification
+      // blocks skip Notifee and often miss the custom ringtone).
+      const message = playCustomSound
+        ? {
+            data: stringifiedData,
+            android: { priority: 'high' as const },
+            apns: {
+              payload: {
+                aps: {
+                  'content-available': 1,
+                },
+              },
+              headers: {
+                'apns-priority': '10',
+              },
+            },
+          }
+        : {
+            notification: {
+              title: notification.title,
+              body: notification.body,
+            },
+            data: stringifiedData,
+            ...soundPayload,
+          };
 
       // Send to all tokens
       const tokenStrings = tokens.map(t => t.token);
