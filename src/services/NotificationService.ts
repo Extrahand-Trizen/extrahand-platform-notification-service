@@ -356,32 +356,57 @@ export class NotificationService {
     platform: 'ios' | 'android' | 'web',
     deviceId?: string
   ): Promise<IFCMTokenDocument> {
-    try {
-      // Check if token already exists
-      let fcmToken = await FCMToken.findOne({ token });
+    const normalizedToken = typeof token === 'string' ? token.trim() : '';
+    if (!normalizedToken) {
+      throw new Error('FCM token is required');
+    }
 
-      if (fcmToken) {
-        // Update existing token
-        fcmToken.userId = userId;
-        fcmToken.platform = platform;
-        fcmToken.deviceId = deviceId;
-        fcmToken.lastActive = new Date();
-        await fcmToken.save();
-        logger.info(`Updated FCM token for user: ${userId}`);
-      } else {
-        // Create new token
-        fcmToken = await FCMToken.create({
-          userId,
-          token,
-          platform,
-          deviceId,
-          lastActive: new Date()
-        });
-        logger.info(`Registered new FCM token for user: ${userId}`);
+    const updatePayload = {
+      userId,
+      token: normalizedToken,
+      platform,
+      deviceId,
+      lastActive: new Date(),
+    };
+
+    try {
+      // Atomic upsert — safe when the app re-registers the same device token
+      // (e.g. account switch) or when concurrent POST /token requests race.
+      const fcmToken = await FCMToken.findOneAndUpdate(
+        { token: normalizedToken },
+        { $set: updatePayload },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+
+      if (!fcmToken) {
+        throw new Error('FCM token upsert returned no document');
       }
+
+      logger.info(`Registered/updated FCM token for user: ${userId}`, {
+        platform,
+        hasDeviceId: !!deviceId,
+      });
 
       return fcmToken;
     } catch (error: any) {
+      // Concurrent upserts can still collide on the unique token index — retry once as update.
+      if (error?.code === 11000) {
+        try {
+          const existing = await FCMToken.findOneAndUpdate(
+            { token: normalizedToken },
+            { $set: updatePayload },
+            { new: true },
+          );
+          if (existing) {
+            logger.info(`Reassigned existing FCM token to user after duplicate-key race: ${userId}`);
+            return existing;
+          }
+        } catch (retryError: any) {
+          logger.error('Error reassigning FCM token after duplicate-key race:', retryError);
+          throw new Error(`Failed to register FCM token: ${retryError.message}`);
+        }
+      }
+
       logger.error('Error registering FCM token:', error);
       throw new Error(`Failed to register FCM token: ${error.message}`);
     }
