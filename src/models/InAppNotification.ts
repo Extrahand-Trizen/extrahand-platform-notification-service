@@ -53,6 +53,7 @@ const InAppNotificationSchema = new Schema<IInAppNotificationDocument>(
     },
     expiresAt: {
       type: Date,
+      index: true,
       sparse: true,
     },
   },
