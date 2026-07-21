@@ -1,7 +1,7 @@
 import mongoose, { Schema, Model, Document } from 'mongoose';
 
 export interface IInAppNotificationDocument extends Document {
-  userId: string;
+  userId: string; 
   title: string;
   body: string;
   type: string; // 'info' | 'warning' | 'error' | 'success'
