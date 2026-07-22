@@ -8,6 +8,7 @@ import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
 import { buildPushSoundPayload, usesCustomPushSound } from '../utils/pushSound';
 import { fcmCircuit } from '../utils/CircuitBreaker';
+import { fireDialogWhatsAppForPush } from '../clients/dialogWhatsAppBridge';
 
 export class NotificationService {
   /**
@@ -31,7 +32,7 @@ export class NotificationService {
   static async shouldSendNotification(
     userId: string,
     category: keyof INotificationPreferences,
-    channel: 'push' | 'email' | 'sms'
+    channel: 'push' | 'email' | 'sms' | 'whatsapp'
   ): Promise<boolean> {
     try {
       const normalizedCategory = String(category || '').trim().toLowerCase();
@@ -76,7 +77,20 @@ export class NotificationService {
             channel,
             error: error?.message || 'Unknown error',
           });
+          // WhatsApp must not spam if prefs API is down — fail closed.
+          if (channel === 'whatsapp') {
+            return false;
+          }
         }
+      }
+
+      // Local Mongo prefs have no WhatsApp channel — only push/email/sms shaped.
+      if (channel === 'whatsapp') {
+        logger.warn('WhatsApp preference check skipped: USER_SERVICE_URL missing or invalid response', {
+          userId,
+          category,
+        });
+        return false;
       }
 
       // Validate userId
@@ -195,6 +209,9 @@ export class NotificationService {
       // Check if user has push notifications enabled for this category
       const category = notification.category || 'taskUpdates';
       const shouldSend = await this.shouldSendNotification(userId, category, 'push');
+
+      // WhatsApp is a separate Settings toggle — try Dialog even if push is off.
+      fireDialogWhatsAppForPush(userId, notification);
 
       if (!shouldSend) {
         logger.info(`Notification skipped - user preferences disabled`, {
@@ -910,6 +927,3 @@ export class NotificationService {
     }
   }
 }
-
-
-

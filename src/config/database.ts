@@ -1,7 +1,24 @@
+import dns from 'dns';
 import mongoose from 'mongoose';
 import logger from './logger';
 
 let isConnected = false;
+
+/**
+ * Some ISP resolvers (common on Windows) refuse MongoDB Atlas SRV lookups
+ * (`querySrv ECONNREFUSED _mongodb._tcp...`). Prefer public DNS for +srv URIs.
+ */
+function preferPublicDnsForSrv(uri: string): void {
+  if (!uri.startsWith('mongodb+srv://')) return;
+  try {
+    const current = dns.getServers();
+    const preferred = ['8.8.8.8', '1.1.1.1'];
+    const merged = [...preferred, ...current.filter((s) => !preferred.includes(s))];
+    dns.setServers(merged);
+  } catch {
+    // ignore — connect will still attempt default DNS
+  }
+}
 
 export async function connectMongo(uri: string): Promise<typeof mongoose.connection> {
   if (!uri) {
@@ -20,6 +37,8 @@ export async function connectMongo(uri: string): Promise<typeof mongoose.connect
     cleanUri = uri.replace(/appName=Cluster0w=majority&appName=Cluster0/, 'appName=Cluster0');
     logger.warn('⚠️  Detected malformed MongoDB URI, auto-fixing...');
   }
+
+  preferPublicDnsForSrv(cleanUri);
   
   try {
     const connectionOptions = {
@@ -83,30 +102,3 @@ export function getConnectionStatus(): boolean {
   
   return connected;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
