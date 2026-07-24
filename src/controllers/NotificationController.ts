@@ -272,16 +272,19 @@ export class NotificationController {
         throw new BadRequestError('User ID is required');
       }
 
-      const { limit = 50, skip = 0, unreadOnly = false } = req.query;
+      const { limit = 50, skip = 0, unreadOnly = false, role } = req.query;
       const limitNum = Math.min(parseInt(limit as string) || 50, 100);
       const skipNum = parseInt(skip as string) || 0;
       const unreadOnlyBool = unreadOnly === 'true';
+      const roleFilter =
+        role === 'helper' || role === 'partner' ? (role as 'helper' | 'partner') : undefined;
 
       const result = await NotificationService.getInAppNotifications(
         userId,
         limitNum,
         skipNum,
-        unreadOnlyBool
+        unreadOnlyBool,
+        roleFilter,
       );
 
       res.json({
@@ -311,7 +314,10 @@ export class NotificationController {
         throw new BadRequestError('User ID is required');
       }
 
-      const unreadCount = await NotificationService.getUnreadNotificationCount(userId);
+      const { role } = req.query;
+      const roleFilter =
+        role === 'helper' || role === 'partner' ? (role as 'helper' | 'partner') : undefined;
+      const unreadCount = await NotificationService.getUnreadNotificationCount(userId, roleFilter);
 
       res.json({
         success: true,
@@ -373,7 +379,10 @@ export class NotificationController {
         throw new BadRequestError('User ID is required');
       }
 
-      const result = await NotificationService.markAllInAppNotificationsAsRead(userId);
+      const { role } = req.query;
+      const roleFilter =
+        role === 'helper' || role === 'partner' ? (role as 'helper' | 'partner') : undefined;
+      const result = await NotificationService.markAllInAppNotificationsAsRead(userId, roleFilter);
 
       res.json({
         success: true,
@@ -437,7 +446,10 @@ export class NotificationController {
         throw new BadRequestError('User ID is required');
       }
 
-      const result = await NotificationService.deleteAllInAppNotifications(userId);
+      const { role } = req.query;
+      const roleFilter =
+        role === 'helper' || role === 'partner' ? (role as 'helper' | 'partner') : undefined;
+      const result = await NotificationService.deleteAllInAppNotifications(userId, roleFilter);
 
       res.json({
         success: true,

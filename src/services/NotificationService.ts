@@ -1,4 +1,5 @@
 import axios from 'axios';
+import mongoose from 'mongoose';
 import { admin } from '../config/firebase';
 import logger from '../config/logger';
 import NotificationPreferences from '../models/NotificationPreferences';
@@ -639,14 +640,112 @@ export class NotificationService {
       }
 
       const InAppNotification = (await import('../models/InAppNotification')).default;
-      
+
+      // Resolve recipientRole from the task before saving
+      let resolvedData: Record<string, any> = { ...(data.data || {}) };
+      const taskId = resolvedData.taskId;
+      if (taskId) {
+        try {
+          logger.info('[NotificationService] STEP 1 - Querying task doc', {
+            dbName: mongoose.connection.db?.databaseName,
+            readyState: mongoose.connection.readyState,
+            taskId,
+            recipientUserId: data.userId,
+            existingRecipientRole: resolvedData.recipientRole ?? 'none',
+          });
+          const taskDoc = await mongoose.connection
+            .collection('tasks')
+            .findOne(
+              { _id: new mongoose.Types.ObjectId(String(taskId)) },
+              { projection: { bookingSource: 1, requesterId: 1, assigneeId: 1, assigneeUid: 1 } }
+            );
+          logger.info('[NotificationService] STEP 2 - Task query result', {
+            found: Boolean(taskDoc),
+            bookingSource: (taskDoc as any)?.bookingSource,
+            requesterId: (taskDoc as any)?.requesterId?.toString(),
+            assigneeId: (taskDoc as any)?.assigneeId?.toString(),
+            assigneeUid: (taskDoc as any)?.assigneeUid,
+          });
+
+          if (taskDoc) {
+            const currentRole = resolvedData.recipientRole;
+
+            if ((taskDoc as any).bookingSource === 'book_now') {
+              resolvedData.recipientRole = 'partner';
+              logger.info('[NotificationService] STEP 3 - Role from bookingSource=book_now', { recipientRole: 'partner' });
+            } else if (currentRole === 'helper' || currentRole === 'tasker') {
+              resolvedData.recipientRole = 'tasker';
+              logger.info('[NotificationService] STEP 3 - Role from explicit currentRole', { currentRole, recipientRole: 'tasker' });
+            } else if (currentRole === 'customer') {
+              resolvedData.recipientRole = 'customer';
+              logger.info('[NotificationService] STEP 3 - Role from explicit currentRole', { currentRole, recipientRole: 'customer' });
+            } else {
+              // currentRole is absent — infer by matching userId against task's assignee/requester
+              logger.info('[NotificationService] STEP 3 - currentRole absent, inferring from task fields', {
+                recipientUserId: data.userId,
+              });
+
+              // Step 3a: Check if recipient is the assignee (helper) via Firebase UID directly
+              const isAssigneeByUid = (taskDoc as any).assigneeUid && (taskDoc as any).assigneeUid === data.userId;
+
+              // Step 3b: Look up profile to get MongoDB _id for requesterId/assigneeId comparison
+              let profileId: string | undefined;
+              try {
+                const profileDoc = await mongoose.connection
+                  .collection('profiles')
+                  .findOne({ uid: data.userId }, { projection: { _id: 1 } });
+                profileId = profileDoc?._id?.toString();
+                logger.info('[NotificationService] STEP 3b - Profile lookup', {
+                  recipientUserId: data.userId,
+                  profileId: profileId ?? 'not found',
+                });
+              } catch (profileErr: any) {
+                logger.warn('[NotificationService] STEP 3b - Profile lookup failed', { error: profileErr?.message });
+              }
+
+              const isAssigneeById = profileId && (taskDoc as any).assigneeId?.toString() === profileId;
+              const isRequesterById = profileId && (taskDoc as any).requesterId?.toString() === profileId;
+
+              logger.info('[NotificationService] STEP 3c - Comparison results', {
+                isAssigneeByUid,
+                isAssigneeById,
+                isRequesterById,
+              });
+
+              if (isAssigneeByUid || isAssigneeById) {
+                resolvedData.recipientRole = 'tasker';
+              } else if (isRequesterById) {
+                resolvedData.recipientRole = 'customer';
+              } else {
+                logger.warn('[NotificationService] STEP 3d - Could not infer role, leaving recipientRole unset', {
+                  recipientUserId: data.userId,
+                  taskId,
+                });
+              }
+            }
+
+            logger.info('[NotificationService] STEP 4 - Final resolved recipientRole', {
+              taskId,
+              bookingSource: (taskDoc as any).bookingSource,
+              recipientRole: resolvedData.recipientRole ?? 'UNSET',
+            });
+          }
+        } catch (roleErr: any) {
+          logger.warn('[NotificationService] Failed to resolve recipientRole from task', {
+            taskId,
+            error: roleErr?.message,
+          });
+        }
+      }
+
+
       const notification = await InAppNotification.create({
         userId: data.userId,
         title: data.title,
         body: data.body,
         type: data.type || 'info',
         category: data.category,
-        data: data.data,
+        data: resolvedData,
         read: false
       });
 
@@ -677,6 +776,38 @@ export class NotificationService {
       const InAppNotification = (await import('../models/InAppNotification')).default;
       const category = (data.category || 'taskUpdates') as keyof INotificationPreferences;
       const mandatory = this.isMandatoryInAppNotification(data.category, data.data);
+
+      // Resolve recipientRole from the task before batch-saving
+      let resolvedBatchData: Record<string, any> = { ...(data.data || {}) };
+      const batchTaskId = resolvedBatchData.taskId;
+      if (batchTaskId) {
+        try {
+          const taskDoc = await mongoose.connection
+            .collection('tasks')
+            .findOne(
+              { _id: new mongoose.Types.ObjectId(String(batchTaskId)) },
+              { projection: { bookingSource: 1 } }
+            );
+          if (taskDoc) {
+            const currentRole = resolvedBatchData.recipientRole;
+            if ((taskDoc as any).bookingSource === 'book_now') {
+              resolvedBatchData.recipientRole = 'partner';
+            } else if (currentRole === 'helper' || !currentRole) {
+              resolvedBatchData.recipientRole = 'tasker';
+            }
+            logger.info('[NotificationService] Batch resolved recipientRole', {
+              taskId: batchTaskId,
+              bookingSource: (taskDoc as any).bookingSource,
+              recipientRole: resolvedBatchData.recipientRole,
+            });
+          }
+        } catch (roleErr: any) {
+          logger.warn('[NotificationService] Failed to resolve batch recipientRole from task', {
+            taskId: batchTaskId,
+            error: roleErr?.message,
+          });
+        }
+      }
 
       const preferenceResults = await Promise.all(
         data.userIds.map(async (userId) => {
@@ -710,7 +841,7 @@ export class NotificationService {
         body: data.body,
         type: data.type || 'info',
         category: data.category,
-        data: data.data,
+        data: resolvedBatchData,
         read: false
       }));
 
@@ -735,13 +866,50 @@ export class NotificationService {
   }
 
   /**
+   * Helper to build the role-based filter query.
+   * If role === 'helper', it will match:
+   *   - recipientRole is 'helper' or 'tasker'
+   *   - OR recipientRole is unset/null/missing/empty
+   * If role === 'partner', it will only match:
+   *   - recipientRole is 'partner' or 'customer'
+   */
+  private static getRoleQuery(
+    userId: string,
+    role?: 'helper' | 'partner',
+    extraConditions?: Record<string, any>
+  ): Record<string, any> {
+    const baseQuery: Record<string, any> = { userId, ...extraConditions };
+    if (!role) {
+      return baseQuery;
+    }
+    if (role === 'helper') {
+      return {
+        ...baseQuery,
+        $or: [
+          { 'data.recipientRole': { $in: ['helper', 'tasker'] } },
+          { 'data.recipientRole': { $exists: false } },
+          { 'data.recipientRole': null },
+          { 'data.recipientRole': '' },
+          { 'data': null }
+        ]
+      };
+    } else {
+      return {
+        ...baseQuery,
+        'data.recipientRole': { $in: ['partner', 'customer'] },
+      };
+    }
+  }
+
+  /**
    * Get in-app notifications for a user
    */
   static async getInAppNotifications(
     userId: string,
     limit: number = 50,
     skip: number = 0,
-    unreadOnly: boolean = false
+    unreadOnly: boolean = false,
+    role?: 'helper' | 'partner'
   ): Promise<{
     notifications: any[];
     unreadCount: number;
@@ -749,17 +917,12 @@ export class NotificationService {
   }> {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
-      
-      const query = { userId };
-      if (unreadOnly) {
-        (query as any).read = false;
-      }
 
-      // Get total unread count
-      const unreadCount = await InAppNotification.countDocuments({
-        userId,
-        read: false
-      });
+      const query = this.getRoleQuery(userId, role, unreadOnly ? { read: false } : {});
+
+      // Get total unread count for this role filter
+      const unreadCountQuery = this.getRoleQuery(userId, role, { read: false });
+      const unreadCount = await InAppNotification.countDocuments(unreadCountQuery);
 
       // Fetch notifications
       const notifications = await InAppNotification
@@ -776,7 +939,8 @@ export class NotificationService {
       logger.info(`Fetched in-app notifications for user: ${userId}`, {
         returned: notifications.length,
         unreadCount,
-        hasMore
+        hasMore,
+        role,
       });
 
       return {
@@ -793,14 +957,12 @@ export class NotificationService {
   /**
    * Get unread notification count for a user
    */
-  static async getUnreadNotificationCount(userId: string): Promise<number> {
+  static async getUnreadNotificationCount(userId: string, role?: 'helper' | 'partner'): Promise<number> {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
-      
-      const count = await InAppNotification.countDocuments({
-        userId,
-        read: false
-      });
+
+      const query = this.getRoleQuery(userId, role, { read: false });
+      const count = await InAppNotification.countDocuments(query);
 
       return count;
     } catch (error: any) {
@@ -840,23 +1002,20 @@ export class NotificationService {
   /**
    * Mark all notifications as read for a user
    */
-  static async markAllInAppNotificationsAsRead(userId: string): Promise<{ modifiedCount: number }> {
+  static async markAllInAppNotificationsAsRead(userId: string, role?: 'helper' | 'partner'): Promise<{ modifiedCount: number }> {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
-      
-      const result = await InAppNotification.updateMany(
-        {
-          userId,
-          read: false
-        },
-        {
-          read: true,
-          readAt: new Date()
-        }
-      );
+
+      const query = this.getRoleQuery(userId, role, { read: false });
+
+      const result = await InAppNotification.updateMany(query, {
+        read: true,
+        readAt: new Date()
+      });
 
       logger.info(`Marked all notifications as read for user: ${userId}`, {
-        modifiedCount: result.modifiedCount
+        modifiedCount: result.modifiedCount,
+        role,
       });
 
       return { modifiedCount: result.modifiedCount };
@@ -892,15 +1051,19 @@ export class NotificationService {
    * Delete all in-app notifications for a user
    */
   static async deleteAllInAppNotifications(
-    userId: string
+    userId: string,
+    role?: 'helper' | 'partner'
   ): Promise<{ deletedCount: number }> {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
 
-      const result = await InAppNotification.deleteMany({ userId });
+      const query = this.getRoleQuery(userId, role);
+
+      const result = await InAppNotification.deleteMany(query);
 
       logger.info(`Deleted all in-app notifications for user: ${userId}`, {
         deletedCount: result.deletedCount ?? 0,
+        role,
       });
 
       return { deletedCount: result.deletedCount ?? 0 };
