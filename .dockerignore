@@ -1,0 +1,14 @@
+node_modules
+dist
+logs
+.git
+.github
+.env
+.env.*
+*.md
+serviceAccountKey.json
+captain-definition
+*.log
+.DS_Store
+.vscode
+.idea

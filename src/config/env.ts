@@ -37,6 +37,17 @@ const envSchema = z.object({
   // Service-to-Service Communication
   SERVICE_AUTH_TOKEN: z.string().min(1, 'SERVICE_AUTH_TOKEN is required for service-to-service communication').optional(),
   USER_SERVICE_URL: z.string().url('Invalid USER_SERVICE_URL').optional(),
+
+  // Dialog (WhatsApp template notifications — mirror push when Settings WhatsApp is on)
+  DIALOG_WHATSAPP_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => {
+      const s = String(v || '').trim().toLowerCase();
+      return s === '1' || s === 'true' || s === 'yes';
+    }),
+  DIALOG_SERVICE_URL: z.string().url('Invalid DIALOG_SERVICE_URL').optional(),
+  DIALOG_ORGANIZATION_ID: z.string().min(1).optional(),
 });
 
 // CORS configuration
@@ -160,6 +171,3 @@ export function validateEnv() {
 }
 
 export type EnvConfig = z.infer<typeof envSchema>;
-
-
-
