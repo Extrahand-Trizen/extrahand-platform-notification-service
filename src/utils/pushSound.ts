@@ -8,11 +8,17 @@ export const PUSH_NOTIFICATION_SOUND_IOS = 'urgent_notify_single_ring.wav';
 export const PUSH_ANDROID_MATCH_CHANNEL_ID = 'extrahand_match_alerts_v3';
 export const PUSH_ANDROID_NEARBY_CHANNEL_ID = 'extrahand_nearby_alerts_v3';
 export const PUSH_ANDROID_NEARBY_SKILL_CHANNEL_ID = 'extrahand_nearby_skill_alerts_v3';
+export const PUSH_ANDROID_BOOK_NOW_RING_CHANNEL_ID = 'extrahand_book_now_ring_alerts';
+
+// Book Now ring sound (15-second looping ring)
+export const PUSH_BOOK_NOW_RING_SOUND_ANDROID = 'urgent_notify_10_seconds_gentle_loop';
+export const PUSH_BOOK_NOW_RING_SOUND_IOS = 'urgent_notify_10_seconds_gentle_loop.mp3';
 
 const CUSTOM_SOUND_EVENT_KEYS = new Set([
   'TASK_CREATED_RECOMMENDED',
   'TASK_CREATED_CATEGORY',
   'TASK_NEARBY',
+  'BOOK_NOW_PARTNER_ASSIGNED',
 ]);
 
 function normalizeEventKey(value: unknown): string {
@@ -59,6 +65,27 @@ export function buildPushSoundPayload(input: {
     String(data.title ?? '').toLowerCase().includes('skill');
 
   if (usesCustomPushSound(input)) {
+    // Book Now ring uses its own dedicated channel and 15-second sound
+    if (eventKey === 'BOOK_NOW_PARTNER_ASSIGNED') {
+      return {
+        android: {
+          priority: 'high',
+          notification: {
+            sound: PUSH_BOOK_NOW_RING_SOUND_ANDROID,
+            channelId: PUSH_ANDROID_BOOK_NOW_RING_CHANNEL_ID,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: PUSH_BOOK_NOW_RING_SOUND_IOS,
+              badge: 1,
+            },
+          },
+        },
+      };
+    }
+
     let channelId = PUSH_ANDROID_MATCH_CHANNEL_ID;
     if (eventKey === 'TASK_NEARBY') {
       channelId = hasSkillMatchContext
