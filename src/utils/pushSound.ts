@@ -21,6 +21,11 @@ const CUSTOM_SOUND_EVENT_KEYS = new Set([
   'BOOK_NOW_PARTNER_ASSIGNED',
 ]);
 
+/** Events that must be rendered by the mobile Notifee layer (actions / largeIcon / expanded). */
+const NOTIFEE_OWNED_EVENT_KEYS = new Set([
+  'REVIEW_REQUEST',
+]);
+
 function normalizeEventKey(value: unknown): string {
   if (value == null) return '';
   return String(value).toUpperCase().replace(/[\s-]+/g, '_');
@@ -42,6 +47,27 @@ export function usesCustomPushSound(input: {
 
   const category = String(input.category ?? data.category ?? '').trim();
   return category === 'recommendedTaskAlerts';
+}
+
+/** True when FCM must be data-only so Notifee owns the tray UI. */
+export function usesNotifeeOwnedPushDisplay(input: {
+  type?: string;
+  category?: string;
+  data?: Record<string, unknown> | null;
+}): boolean {
+  if (usesCustomPushSound(input)) return true;
+
+  const data = input.data && typeof input.data === 'object' ? input.data : {};
+  const eventKey = normalizeEventKey(
+    data.eventKey ?? data.event_key ?? input.type,
+  );
+  if (eventKey && NOTIFEE_OWNED_EVENT_KEYS.has(eventKey)) return true;
+
+  const action = String(data.action ?? '').toLowerCase();
+  if (action === 'rate_task') return true;
+  if (String(data.openReview ?? data.open_review ?? '') === '1') return true;
+
+  return false;
 }
 
 export function buildPushSoundPayload(input: {

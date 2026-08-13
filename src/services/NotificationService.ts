@@ -7,7 +7,7 @@ import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
 import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
-import { buildPushSoundPayload, usesCustomPushSound } from '../utils/pushSound';
+import { buildPushSoundPayload, usesCustomPushSound, usesNotifeeOwnedPushDisplay } from '../utils/pushSound';
 import { fcmCircuit } from '../utils/CircuitBreaker';
 import { fireDialogWhatsAppForPush } from '../clients/dialogWhatsAppBridge';
 
@@ -78,14 +78,14 @@ export class NotificationService {
             channel,
             error: error?.message || 'Unknown error',
           });
-          // WhatsApp must not spam if prefs API is down — fail closed.
+          // WhatsApp must not spam if prefs API is down â€” fail closed.
           if (channel === 'whatsapp') {
             return false;
           }
         }
       }
 
-      // Local Mongo prefs have no WhatsApp channel — only push/email/sms shaped.
+      // Local Mongo prefs have no WhatsApp channel â€” only push/email/sms shaped.
       if (channel === 'whatsapp') {
         logger.warn('WhatsApp preference check skipped: USER_SERVICE_URL missing or invalid response', {
           userId,
@@ -124,7 +124,7 @@ export class NotificationService {
       if (!preferences) {
         const isChatCategory = normalizedCategory === 'taskupdates';
         if (isChatCategory || (channel === 'push' && isTaskDiscoveryCategory)) {
-          logger.warn('No preferences found — allowing notification (fail-open)', {
+          logger.warn('No preferences found â€” allowing notification (fail-open)', {
             userId,
             category,
             channel,
@@ -142,7 +142,7 @@ export class NotificationService {
       if (!categoryPrefs) {
         const isChatCategory = normalizedCategory === 'taskupdates';
         if (isChatCategory || (channel === 'push' && isTaskDiscoveryCategory)) {
-          logger.warn('Category not found in preferences — allowing notification (fail-open)', {
+          logger.warn('Category not found in preferences â€” allowing notification (fail-open)', {
             userId,
             category,
             channel,
@@ -211,7 +211,7 @@ export class NotificationService {
       const category = notification.category || 'taskUpdates';
       const shouldSend = await this.shouldSendNotification(userId, category, 'push');
 
-      // WhatsApp is a separate Settings toggle — try Dialog even if push is off.
+      // WhatsApp is a separate Settings toggle â€” try Dialog even if push is off.
       fireDialogWhatsAppForPush(userId, notification);
 
       if (!shouldSend) {
@@ -256,10 +256,16 @@ export class NotificationService {
         data: pushData,
       });
 
-      // Data-only for custom-sound alerts so the mobile app displays via Notifee
-      // with the correct Android channel + bundled sound (OS-handled notification
-      // blocks skip Notifee and often miss the custom ringtone).
-      const message = playCustomSound
+      // Data-only when Notifee must own the tray UI (custom sound OR Blinkit-style
+      // REVIEW_REQUEST with Rate helper action + large right icon). OS-handled
+      // `notification` payloads show a collapsed system card with no actions.
+      const notifeeOwned = usesNotifeeOwnedPushDisplay({
+        type: notification.type,
+        category: notification.category,
+        data: pushData,
+      });
+
+      const message = notifeeOwned
         ? {
             data: stringifiedData,
             android: { priority: 'high' as const },
@@ -267,6 +273,15 @@ export class NotificationService {
               payload: {
                 aps: {
                   'content-available': 1,
+                  ...(playCustomSound
+                    ? {}
+                    : {
+                        alert: {
+                          title: notification.title,
+                          body: notification.body,
+                        },
+                        sound: 'default',
+                      }),
                 },
               },
               headers: {
@@ -283,7 +298,7 @@ export class NotificationService {
             ...soundPayload,
           };
 
-      // Send to all tokens (circuit breaker — push failures must not break callers)
+      // Send to all tokens (circuit breaker â€” push failures must not break callers)
       const tokenStrings = tokens.map(t => t.token);
       const response = await fcmCircuit.runSafe(
         () =>
@@ -401,7 +416,7 @@ export class NotificationService {
     };
 
     try {
-      // Atomic upsert — safe when the app re-registers the same device token
+      // Atomic upsert â€” safe when the app re-registers the same device token
       // (e.g. account switch) or when concurrent POST /token requests race.
       const fcmToken = await FCMToken.findOneAndUpdate(
         { token: normalizedToken },
@@ -420,7 +435,7 @@ export class NotificationService {
 
       return fcmToken;
     } catch (error: any) {
-      // Concurrent upserts can still collide on the unique token index — retry once as update.
+      // Concurrent upserts can still collide on the unique token index â€” retry once as update.
       if (error?.code === 11000) {
         try {
           const existing = await FCMToken.findOneAndUpdate(
@@ -697,7 +712,7 @@ export class NotificationService {
               resolvedData.recipientRole = 'customer';
               logger.info('[NotificationService] STEP 3 - Role from explicit currentRole', { currentRole, recipientRole: 'customer' });
             } else {
-              // currentRole is absent — infer by matching userId against task's assignee/requester
+              // currentRole is absent â€” infer by matching userId against task's assignee/requester
               logger.info('[NotificationService] STEP 3 - currentRole absent, inferring from task fields', {
                 recipientUserId: data.userId,
               });
