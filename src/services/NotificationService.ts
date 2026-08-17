@@ -300,6 +300,20 @@ export class NotificationService {
 
       // Send to all tokens (circuit breaker â€” push failures must not break callers)
       const tokenStrings = tokens.map(t => t.token);
+      
+      // DEBUG: Log Book Now assignment notifications
+      if (notification.type === 'BOOK_NOW_PARTNER_ASSIGNED' || pushData.eventKey === 'BOOK_NOW_PARTNER_ASSIGNED') {
+        logger.info('[BOOK_NOW_FCM_DEBUG] Notification payload', {
+          userId,
+          type: notification.type,
+          eventKey: pushData.eventKey,
+          category: notification.category,
+          title: notification.title,
+          body: notification.body,
+          bookingSource: pushData.bookingSource,
+          tokenCount: tokenStrings.length,
+        });
+      }
       const response = await fcmCircuit.runSafe(
         () =>
           admin.messaging().sendEachForMulticast({
