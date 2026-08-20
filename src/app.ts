@@ -1,0 +1,103 @@
+import express, { Application } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import morgan from 'morgan';
+import mongoSanitize from 'express-mongo-sanitize';
+// import rateLimit from 'express-rate-limit';
+import { validateEnv, getCorsConfig } from './config/env';
+import { errorHandler } from './middleware/errorHandler';
+import routes from './routes';
+import logger from './config/logger';
+
+const env = validateEnv();
+
+export function createApp(): Application {
+  const app = express();
+
+  // Security middleware
+  app.use(helmet());
+  
+  // CORS middleware - must be before routes
+  const corsConfig = getCorsConfig(env);
+  app.use(cors(corsConfig));
+  
+  // Explicit preflight OPTIONS handler
+  app.options('*', cors(corsConfig));
+
+  // Body parsing middleware
+  app.use(express.json({ limit: '10mb', strict: false }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+  // Compression
+  app.use(compression());
+
+  // Logging
+  if (env.NODE_ENV !== 'production') {
+    app.use(morgan('dev'));
+  } else {
+    app.use(morgan('combined', {
+      stream: {
+        write: (message: string) => logger.info(message.trim())
+      }
+    }));
+  }
+
+  // Sanitize data
+  app.use(mongoSanitize());
+
+  // Rate limiting (commented out for now)
+  // const limiter = rateLimit({
+  //   windowMs: env.RATE_LIMIT_WINDOW_MS,
+  //   max: env.RATE_LIMIT_MAX_REQUESTS,
+  //   message: 'Too many requests from this IP, please try again later.',
+  //   standardHeaders: true,
+  //   legacyHeaders: false,
+  // });
+  // app.use('/api/', limiter);
+
+  // Serve uploaded files statically
+  const path = require('path');
+  const fs = require('fs');
+  const uploadsPath = path.join(__dirname, '../uploads');
+  if (!fs.existsSync(uploadsPath)) {
+    fs.mkdirSync(uploadsPath, { recursive: true });
+  }
+  app.use('/uploads', (_req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    next();
+  });
+  app.use('/uploads', express.static(uploadsPath));
+  logger.info(`📁 Serving static files from: ${uploadsPath} at /uploads`);
+
+  // Health check
+  app.get('/api/v1/health', (_req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'notification-service',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
+
+  // Routes
+  app.use('/api/v1', routes);
+
+  // 404 handler
+  app.use((req, res) => {
+    res.status(404).json({
+      success: false,
+      error: 'Not Found',
+      message: `Route ${req.method} ${req.path} not found`
+    });
+  });
+
+  // Error handler (must be last)
+  app.use(errorHandler);
+
+  return app;
+}
+
+
+
