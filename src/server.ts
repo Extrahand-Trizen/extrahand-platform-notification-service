@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { connectMongo } from './config/database';
 import { validateEnv } from './config/env';
 import logger from './config/logger';
+import { CampaignWorkerService } from './services/CampaignWorkerService';
 // ✨ Initialize Firebase BEFORE everything else
 import './config/firebase';
 
@@ -25,16 +26,21 @@ async function startServer() {
       logger.info(`🚀 Notification Service running on port ${port}`);
       logger.info(`📝 Environment: ${env.NODE_ENV}`);
       logger.info(`🔗 Health check: http://localhost:${port}/api/v1/health`);
+      
+      // Start background campaign worker
+      CampaignWorkerService.start();
     });
 
     // Graceful shutdown
     process.on('SIGTERM', () => {
       logger.info('SIGTERM signal received: closing HTTP server');
+      CampaignWorkerService.stop();
       process.exit(0);
     });
 
     process.on('SIGINT', () => {
       logger.info('SIGINT signal received: closing HTTP server');
+      CampaignWorkerService.stop();
       process.exit(0);
     });
 
