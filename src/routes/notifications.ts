@@ -98,6 +98,14 @@ router.post(
   asyncHandler(NotificationController.createInAppNotification)
 );
 
+// Service-to-service: purge one role's in-app notifications for a user (e.g. the
+// QC/seller backend on store deletion). Requires BOTH userId and role.
+router.post(
+  '/in-app/purge',
+  serviceAuthMiddleware,
+  asyncHandler(NotificationController.purgeRoleNotifications)
+);
+
 router.post(
   '/in-app/send-batch',
   serviceAuthMiddleware,

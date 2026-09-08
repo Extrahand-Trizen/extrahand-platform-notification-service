@@ -1132,4 +1132,43 @@ export class NotificationService {
       throw new Error(`Failed to delete all notifications: ${error.message}`);
     }
   }
+
+  /**
+   * Service-to-service: hard-delete every in-app notification that belongs to
+   * ONE role for a user — used when that role is deleted (e.g. a seller store).
+   * For `seller` it also catches legacy rows that predate `recipientRole`
+   * tagging, by their quick-commerce eventKey. Never touches other roles' rows.
+   */
+  static async purgeRoleNotifications(
+    userId: string,
+    role: NotificationRoleFilter,
+  ): Promise<{ deletedCount: number }> {
+    if (!userId || !role) {
+      throw new Error('userId and role are both required');
+    }
+    const InAppNotification = (await import('../models/InAppNotification')).default;
+
+    const or: Record<string, unknown>[] = [{ 'data.recipientRole': role }];
+    if (role === 'seller') {
+      or.push({
+        'data.eventKey': {
+          $in: [
+            'QC_ORDER_PLACED',
+            'QC_ORDER_AUTO_REJECTED',
+            'QC_SHOP_AUTO_PAUSED',
+            'QC_SHOP_REOPENED',
+            'QC_STOCK_OUT',
+          ],
+        },
+      });
+    }
+
+    const result = await InAppNotification.deleteMany({ userId, $or: or });
+    logger.warn('Purged role notifications', {
+      userId,
+      role,
+      deletedCount: result.deletedCount ?? 0,
+    });
+    return { deletedCount: result.deletedCount ?? 0 };
+  }
 }

@@ -471,6 +471,40 @@ export class NotificationController {
   }
 
   /**
+   * POST /api/v1/notifications/in-app/purge
+   * Service-to-service: hard-delete one role's in-app notifications for a user.
+   * Used by the QC/seller backend when a seller deletes their store. Requires
+   * BOTH `userId` and a valid `role` in the body — a bare userId is rejected so
+   * this can never wipe another role's feed.
+   */
+  static async purgeRoleNotifications(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { userId, role } = req.body || {};
+      if (!userId || typeof userId !== 'string') {
+        throw new BadRequestError('userId is required');
+      }
+      const roleFilter = parseRoleFilter(role);
+      if (!roleFilter) {
+        throw new BadRequestError('role is required and must be one of: helper, partner, seller');
+      }
+
+      const result = await NotificationService.purgeRoleNotifications(userId, roleFilter);
+
+      res.json({
+        success: true,
+        data: { deletedCount: result.deletedCount },
+        message: `${result.deletedCount} ${roleFilter} notification(s) purged`,
+      });
+    } catch (error: any) {
+      logger.error('Error purging role notifications:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to purge notifications',
+      });
+    }
+  }
+
+  /**
    * POST /api/v1/notifications/in-app/send
    * Create in-app notification (service-to-service)
    */
