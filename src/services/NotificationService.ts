@@ -1,13 +1,18 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
-import { admin } from '../config/firebase';
+import { admin, mobileMessaging } from '../config/firebase';
 import logger from '../config/logger';
 import NotificationPreferences from '../models/NotificationPreferences';
 import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
 import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
-import { buildPushSoundPayload, usesCustomPushSound, usesNotifeeOwnedPushDisplay } from '../utils/pushSound';
+import {
+  buildPushSoundPayload,
+  usesCustomPushSound,
+  usesMobileProjectFcm,
+  usesNotifeeOwnedPushDisplay,
+} from '../utils/pushSound';
 import { fcmCircuit } from '../utils/CircuitBreaker';
 import { fireDialogWhatsAppForPush } from '../clients/dialogWhatsAppBridge';
 
@@ -36,10 +41,11 @@ export class NotificationService {
     channel: 'push' | 'email' | 'sms' | 'whatsapp'
   ): Promise<boolean> {
     try {
+      if (channel === 'push') {
+        return true;
+      }
+
       const normalizedCategory = String(category || '').trim().toLowerCase();
-      const isTaskDiscoveryCategory =
-        normalizedCategory === 'recommendedtaskalerts' ||
-        normalizedCategory === 'keywordtaskalerts';
 
       const env = validateEnv();
       const userServiceUrl = env.USER_SERVICE_URL;
@@ -123,7 +129,7 @@ export class NotificationService {
       // because blocking them silently breaks the core messaging feature.
       if (!preferences) {
         const isChatCategory = normalizedCategory === 'taskupdates';
-        if (isChatCategory || (channel === 'push' && isTaskDiscoveryCategory)) {
+        if (isChatCategory) {
           logger.warn('No preferences found â€” allowing notification (fail-open)', {
             userId,
             category,
@@ -141,7 +147,7 @@ export class NotificationService {
       // Exception: taskUpdates (chat messages) are always allowed
       if (!categoryPrefs) {
         const isChatCategory = normalizedCategory === 'taskupdates';
-        if (isChatCategory || (channel === 'push' && isTaskDiscoveryCategory)) {
+        if (isChatCategory) {
           logger.warn('Category not found in preferences â€” allowing notification (fail-open)', {
             userId,
             category,
@@ -155,7 +161,7 @@ export class NotificationService {
 
       // For categories that only have push (keywordTaskAlerts, recommendedTaskAlerts)
       if (category === 'keywordTaskAlerts' || category === 'recommendedTaskAlerts') {
-        return channel === 'push' && (categoryPrefs as { push: boolean }).push === true;
+        return false;
       }
 
       // For other categories with multiple channels
@@ -227,7 +233,11 @@ export class NotificationService {
       const tokens = await this.getUserFCMTokens(userId);
 
       if (tokens.length === 0) {
-        logger.warn(`No FCM tokens found for user: ${userId}`);
+        logger.warn('[FCM_DELIVERY] Stopped: recipient has no registered device tokens', {
+          userId,
+          eventKey: notification.type,
+          category,
+        });
         return { success: true, sent: 0, failed: 0 };
       }
 
@@ -300,6 +310,41 @@ export class NotificationService {
 
       // Send to all tokens (circuit breaker â€” push failures must not break callers)
       const tokenStrings = tokens.map(t => t.token);
+      const useMobileProject = usesMobileProjectFcm({
+        type: notification.type,
+        data: pushData,
+      });
+      const mobileProjectId = process.env.FIREBASE_MOBILE_PROJECT_ID || 'extrahand-ca02c';
+      const primaryProjectMatchesMobile =
+        String(process.env.FIREBASE_PROJECT_ID || '').trim() === mobileProjectId;
+      const messaging = useMobileProject
+        ? mobileMessaging || (primaryProjectMatchesMobile ? admin.messaging() : null)
+        : admin.messaging();
+
+      logger.info('[FCM_DELIVERY] Sender selected', {
+        userId,
+        eventKey: notification.type,
+        action: pushData.action,
+        category,
+        senderMode: useMobileProject ? 'mobile-assignment' : 'primary',
+        targetProjectId: useMobileProject ? mobileProjectId : process.env.FIREBASE_PROJECT_ID,
+        senderConfigured: Boolean(messaging),
+        tokenCount: tokenStrings.length,
+        dataOnly: notifeeOwned,
+      });
+
+      if (!messaging) {
+        logger.error('[FCM_DELIVERY] Stopped: no sender is configured for the target project', {
+          userId,
+          eventKey: notification.type,
+          primaryProjectId: process.env.FIREBASE_PROJECT_ID,
+          targetProjectId: mobileProjectId,
+          mobileCredentialConfigured: Boolean(
+            process.env.FIREBASE_MOBILE_CLIENT_EMAIL && process.env.FIREBASE_MOBILE_PRIVATE_KEY,
+          ),
+        });
+        return { success: false, sent: 0, failed: tokenStrings.length };
+      }
       
       // DEBUG: Log Book Now assignment notifications
       if (notification.type === 'BOOK_NOW_PARTNER_ASSIGNED' || pushData.eventKey === 'BOOK_NOW_PARTNER_ASSIGNED') {
@@ -316,7 +361,7 @@ export class NotificationService {
       }
       const response = await fcmCircuit.runSafe(
         () =>
-          admin.messaging().sendEachForMulticast({
+          messaging.sendEachForMulticast({
             tokens: tokenStrings,
             ...message,
           }),
@@ -324,12 +369,21 @@ export class NotificationService {
       );
 
       if (!response) {
-        logger.warn('Push notification skipped (FCM circuit open or provider error)', {
+        logger.warn('[FCM_DELIVERY] FCM call did not run or returned no response', {
           userId,
-          type: notification.type,
+          eventKey: notification.type,
+          circuitState: fcmCircuit.getState(),
         });
         return { success: false, sent: 0, failed: tokenStrings.length };
       }
+
+      const failureCodes = response.responses.reduce<Record<string, number>>((counts, result) => {
+        if (!result.success) {
+          const code = result.error?.code || 'unknown';
+          counts[code] = (counts[code] || 0) + 1;
+        }
+        return counts;
+      }, {});
 
       // Update lastActive for successful tokens
       const successfulTokens = response.responses
@@ -361,11 +415,15 @@ export class NotificationService {
         logger.info(`Removed ${invalidTokens.length} invalid FCM tokens`);
       }
 
-      logger.info(`Push notification sent`, {
+      logger.info('[FCM_DELIVERY] FCM response received', {
         userId,
-        type: notification.type,
+        eventKey: notification.type,
+        action: pushData.action,
+        targetProjectId: useMobileProject ? mobileProjectId : process.env.FIREBASE_PROJECT_ID,
+        tokenCount: tokenStrings.length,
         sent: response.successCount,
-        failed: response.failureCount
+        failed: response.failureCount,
+        failureCodes,
       });
 
       return {
@@ -374,7 +432,12 @@ export class NotificationService {
         failed: response.failureCount
       };
     } catch (error: any) {
-      logger.error('Error sending push notification (non-fatal):', error);
+      logger.error('[FCM_DELIVERY] Push send threw an error', {
+        userId,
+        eventKey: notification.type,
+        errorCode: error?.code,
+        message: error?.message || 'Unknown error',
+      });
       return { success: false, sent: 0, failed: 0 };
     }
   }

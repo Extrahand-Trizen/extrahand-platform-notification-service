@@ -143,10 +143,21 @@ export class NotificationController {
       // Accept either userId (single) or recipients (array)
       const targetUsers = recipients && Array.isArray(recipients) ? recipients : [userId];
       const notificationType = type || eventKey;
+      const sourceService = req.headers['x-service-name'];
 
       if (!targetUsers || targetUsers.length === 0 || !notificationType || !title || !body) {
         throw new BadRequestError('userId (or recipients array), type (or eventKey), title, and body are required');
       }
+
+      logger.info('[NOTIFICATION_HANDOFF] Push request accepted', {
+        sourceService,
+        eventKey: notificationType,
+        category,
+        recipientCount: targetUsers.length,
+        taskId: data?.taskId,
+        action: data?.action,
+        recipientRole: data?.recipientRole,
+      });
 
       // Send to all target users
       let totalSent = 0;
@@ -175,6 +186,14 @@ export class NotificationController {
           });
           totalSent += result.sent || 0;
           totalFailed += result.failed || 0;
+          logger.info('[NOTIFICATION_HANDOFF] Recipient delivery completed', {
+            sourceService,
+            eventKey: notificationType,
+            userId: uid,
+            taskId: data?.taskId,
+            sent: result.sent || 0,
+            failed: result.failed || 0,
+          });
         } catch (error) {
           totalFailed++;
           logger.error('Error sending notification to user', { userId: uid, error });
