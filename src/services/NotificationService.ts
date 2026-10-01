@@ -87,10 +87,20 @@ export class NotificationService {
             error: error?.message || 'Unknown error',
           });
           // WhatsApp must not spam if prefs API is down â€” fail closed.
-          if (channel === 'whatsapp') {
+          if (channel === 'whatsapp' || channel === 'email') {
             return false;
           }
         }
+      }
+
+      // The user's email toggle lives only in user-service; local prefs are never synced
+      // and default to enabled, so they can't be trusted to honour an email opt-out.
+      if (channel === 'email') {
+        logger.warn('Email preference check skipped: USER_SERVICE_URL missing or invalid response', {
+          userId,
+          category,
+        });
+        return false;
       }
 
       // Local Mongo prefs have no WhatsApp channel â€” only push/email/sms shaped.
@@ -140,6 +150,11 @@ export class NotificationService {
           return true;
         }
         logger.warn('No preferences found after creation attempts, blocking notification', { userId, category });
+        return false;
+      }
+
+      if (channel === 'push' && preferences.pushEnabled === false) {
+        logger.info('Push blocked by local master toggle', { userId, category });
         return false;
       }
 
