@@ -1,8 +1,15 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../types';
-import { NotificationService } from '../services/NotificationService';
+import { NotificationService, NotificationRoleFilter } from '../services/NotificationService';
 import { BadRequestError } from '../errors/AppError';
 import logger from '../config/logger';
+
+/** Parse the `?role=` query param into a recognised in-app feed scope. */
+function parseRoleFilter(role: unknown): NotificationRoleFilter | undefined {
+  return role === 'helper' || role === 'partner' || role === 'seller'
+    ? (role as NotificationRoleFilter)
+    : undefined;
+}
 
 export class NotificationController {
   /**
@@ -295,8 +302,7 @@ export class NotificationController {
       const limitNum = Math.min(parseInt(limit as string) || 50, 100);
       const skipNum = parseInt(skip as string) || 0;
       const unreadOnlyBool = unreadOnly === 'true';
-      const roleFilter =
-        role === 'helper' || role === 'partner' ? (role as 'helper' | 'partner') : undefined;
+      const roleFilter = parseRoleFilter(role);
 
       const result = await NotificationService.getInAppNotifications(
         userId,
@@ -334,8 +340,7 @@ export class NotificationController {
       }
 
       const { role } = req.query;
-      const roleFilter =
-        role === 'helper' || role === 'partner' ? (role as 'helper' | 'partner') : undefined;
+      const roleFilter = parseRoleFilter(role);
       const unreadCount = await NotificationService.getUnreadNotificationCount(userId, roleFilter);
 
       res.json({
@@ -399,8 +404,7 @@ export class NotificationController {
       }
 
       const { role } = req.query;
-      const roleFilter =
-        role === 'helper' || role === 'partner' ? (role as 'helper' | 'partner') : undefined;
+      const roleFilter = parseRoleFilter(role);
       const result = await NotificationService.markAllInAppNotificationsAsRead(userId, roleFilter);
 
       res.json({
@@ -466,8 +470,7 @@ export class NotificationController {
       }
 
       const { role } = req.query;
-      const roleFilter =
-        role === 'helper' || role === 'partner' ? (role as 'helper' | 'partner') : undefined;
+      const roleFilter = parseRoleFilter(role);
       const result = await NotificationService.deleteAllInAppNotifications(userId, roleFilter);
 
       res.json({
@@ -482,6 +485,40 @@ export class NotificationController {
       res.status(error.statusCode || 500).json({
         success: false,
         error: error.message || 'Failed to clear notifications'
+      });
+    }
+  }
+
+  /**
+   * POST /api/v1/notifications/in-app/purge
+   * Service-to-service: hard-delete one role's in-app notifications for a user.
+   * Used by the QC/seller backend when a seller deletes their store. Requires
+   * BOTH `userId` and a valid `role` in the body — a bare userId is rejected so
+   * this can never wipe another role's feed.
+   */
+  static async purgeRoleNotifications(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { userId, role } = req.body || {};
+      if (!userId || typeof userId !== 'string') {
+        throw new BadRequestError('userId is required');
+      }
+      const roleFilter = parseRoleFilter(role);
+      if (!roleFilter) {
+        throw new BadRequestError('role is required and must be one of: helper, partner, seller');
+      }
+
+      const result = await NotificationService.purgeRoleNotifications(userId, roleFilter);
+
+      res.json({
+        success: true,
+        data: { deletedCount: result.deletedCount },
+        message: `${result.deletedCount} ${roleFilter} notification(s) purged`,
+      });
+    } catch (error: any) {
+      logger.error('Error purging role notifications:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || 'Failed to purge notifications',
       });
     }
   }

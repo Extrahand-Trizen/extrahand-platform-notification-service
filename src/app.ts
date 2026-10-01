@@ -56,6 +56,21 @@ export function createApp(): Application {
   // });
   // app.use('/api/', limiter);
 
+  // Serve uploaded files statically
+  const path = require('path');
+  const fs = require('fs');
+  const uploadsPath = path.join(__dirname, '../uploads');
+  if (!fs.existsSync(uploadsPath)) {
+    fs.mkdirSync(uploadsPath, { recursive: true });
+  }
+  app.use('/uploads', (_req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    next();
+  });
+  app.use('/uploads', express.static(uploadsPath));
+  logger.info(`📁 Serving static files from: ${uploadsPath} at /uploads`);
+
   // Health check
   app.get('/api/v1/health', (_req, res) => {
     res.json({

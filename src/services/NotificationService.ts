@@ -16,6 +16,14 @@ import {
 import { fcmCircuit } from '../utils/CircuitBreaker';
 import { fireDialogWhatsAppForPush } from '../clients/dialogWhatsAppBridge';
 
+/**
+ * Which app's in-app feed a read/list/clear call is scoped to.
+ * - `helper`  → helper/tasker app (also matches legacy untagged notifications)
+ * - `partner` → customer app
+ * - `seller`  → seller / quick-commerce app (strictly `data.recipientRole === 'seller'`)
+ */
+export type NotificationRoleFilter = 'helper' | 'partner' | 'seller';
+
 export class NotificationService {
   /**
    * OTP, payments, and other critical alerts must always appear in-app
@@ -85,10 +93,20 @@ export class NotificationService {
             error: error?.message || 'Unknown error',
           });
           // WhatsApp must not spam if prefs API is down â€” fail closed.
-          if (channel === 'whatsapp') {
+          if (channel === 'whatsapp' || channel === 'email') {
             return false;
           }
         }
+      }
+
+      // The user's email toggle lives only in user-service; local prefs are never synced
+      // and default to enabled, so they can't be trusted to honour an email opt-out.
+      if (channel === 'email') {
+        logger.warn('Email preference check skipped: USER_SERVICE_URL missing or invalid response', {
+          userId,
+          category,
+        });
+        return false;
       }
 
       // Local Mongo prefs have no WhatsApp channel â€” only push/email/sms shaped.
@@ -138,6 +156,11 @@ export class NotificationService {
           return true;
         }
         logger.warn('No preferences found after creation attempts, blocking notification', { userId, category });
+        return false;
+      }
+
+      if (channel === 'push' && preferences.pushEnabled === false) {
+        logger.info('Push blocked by local master toggle', { userId, category });
         return false;
       }
 
@@ -977,13 +1000,15 @@ export class NotificationService {
    * Helper to build the role-based filter query.
    * If role === 'helper', it will match:
    *   - recipientRole is 'helper' or 'tasker'
-   *   - OR recipientRole is unset/null/missing/empty
+   *   - OR recipientRole is unset/null/missing/empty (legacy untagged)
    * If role === 'partner', it will only match:
    *   - recipientRole is 'partner' or 'customer'
+   * If role === 'seller', it will only match:
+   *   - recipientRole is 'seller' (quick-commerce / seller app — strictly tagged)
    */
   private static getRoleQuery(
     userId: string,
-    role?: 'helper' | 'partner',
+    role?: NotificationRoleFilter,
     extraConditions?: Record<string, any>
   ): Record<string, any> {
     const baseQuery: Record<string, any> = { userId, ...extraConditions };
@@ -1001,12 +1026,17 @@ export class NotificationService {
           { 'data': null }
         ]
       };
-    } else {
+    }
+    if (role === 'seller') {
       return {
         ...baseQuery,
-        'data.recipientRole': { $in: ['partner', 'customer'] },
+        'data.recipientRole': 'seller',
       };
     }
+    return {
+      ...baseQuery,
+      'data.recipientRole': { $in: ['partner', 'customer'] },
+    };
   }
 
   /**
@@ -1017,7 +1047,7 @@ export class NotificationService {
     limit: number = 50,
     skip: number = 0,
     unreadOnly: boolean = false,
-    role?: 'helper' | 'partner'
+    role?: NotificationRoleFilter
   ): Promise<{
     notifications: any[];
     unreadCount: number;
@@ -1065,7 +1095,7 @@ export class NotificationService {
   /**
    * Get unread notification count for a user
    */
-  static async getUnreadNotificationCount(userId: string, role?: 'helper' | 'partner'): Promise<number> {
+  static async getUnreadNotificationCount(userId: string, role?: NotificationRoleFilter): Promise<number> {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
 
@@ -1110,7 +1140,7 @@ export class NotificationService {
   /**
    * Mark all notifications as read for a user
    */
-  static async markAllInAppNotificationsAsRead(userId: string, role?: 'helper' | 'partner'): Promise<{ modifiedCount: number }> {
+  static async markAllInAppNotificationsAsRead(userId: string, role?: NotificationRoleFilter): Promise<{ modifiedCount: number }> {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
 
@@ -1160,7 +1190,7 @@ export class NotificationService {
    */
   static async deleteAllInAppNotifications(
     userId: string,
-    role?: 'helper' | 'partner'
+    role?: NotificationRoleFilter
   ): Promise<{ deletedCount: number }> {
     try {
       const InAppNotification = (await import('../models/InAppNotification')).default;
@@ -1179,5 +1209,44 @@ export class NotificationService {
       logger.error('Error deleting all notifications:', error);
       throw new Error(`Failed to delete all notifications: ${error.message}`);
     }
+  }
+
+  /**
+   * Service-to-service: hard-delete every in-app notification that belongs to
+   * ONE role for a user — used when that role is deleted (e.g. a seller store).
+   * For `seller` it also catches legacy rows that predate `recipientRole`
+   * tagging, by their quick-commerce eventKey. Never touches other roles' rows.
+   */
+  static async purgeRoleNotifications(
+    userId: string,
+    role: NotificationRoleFilter,
+  ): Promise<{ deletedCount: number }> {
+    if (!userId || !role) {
+      throw new Error('userId and role are both required');
+    }
+    const InAppNotification = (await import('../models/InAppNotification')).default;
+
+    const or: Record<string, unknown>[] = [{ 'data.recipientRole': role }];
+    if (role === 'seller') {
+      or.push({
+        'data.eventKey': {
+          $in: [
+            'QC_ORDER_PLACED',
+            'QC_ORDER_AUTO_REJECTED',
+            'QC_SHOP_AUTO_PAUSED',
+            'QC_SHOP_REOPENED',
+            'QC_STOCK_OUT',
+          ],
+        },
+      });
+    }
+
+    const result = await InAppNotification.deleteMany({ userId, $or: or });
+    logger.warn('Purged role notifications', {
+      userId,
+      role,
+      deletedCount: result.deletedCount ?? 0,
+    });
+    return { deletedCount: result.deletedCount ?? 0 };
   }
 }
