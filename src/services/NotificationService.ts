@@ -54,6 +54,9 @@ export class NotificationService {
       }
 
       const normalizedCategory = String(category || '').trim().toLowerCase();
+      const isTaskDiscoveryCategory =
+        normalizedCategory === 'recommendedtaskalerts' ||
+        normalizedCategory === 'keywordtaskalerts';
 
       const env = validateEnv();
       const userServiceUrl = env.USER_SERVICE_URL;
