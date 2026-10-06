@@ -147,8 +147,8 @@ export class NotificationService {
       // because blocking them silently breaks the core messaging feature.
       if (!preferences) {
         const isChatCategory = normalizedCategory === 'taskupdates';
-        if (isChatCategory) {
-          logger.warn('No preferences found â€” allowing notification (fail-open)', {
+        if (isChatCategory || ((channel as string) === 'push' && isTaskDiscoveryCategory)) {
+          logger.warn('No preferences found — allowing notification (fail-open)', {
             userId,
             category,
             channel,
@@ -159,7 +159,7 @@ export class NotificationService {
         return false;
       }
 
-      if (channel === 'push' && preferences.pushEnabled === false) {
+      if ((channel as string) === 'push' && (preferences as any).pushEnabled === false) {
         logger.info('Push blocked by local master toggle', { userId, category });
         return false;
       }
@@ -170,8 +170,8 @@ export class NotificationService {
       // Exception: taskUpdates (chat messages) are always allowed
       if (!categoryPrefs) {
         const isChatCategory = normalizedCategory === 'taskupdates';
-        if (isChatCategory) {
-          logger.warn('Category not found in preferences â€” allowing notification (fail-open)', {
+        if (isChatCategory || ((channel as string) === 'push' && isTaskDiscoveryCategory)) {
+          logger.warn('Category not found in preferences — allowing notification (fail-open)', {
             userId,
             category,
             channel,
@@ -184,12 +184,12 @@ export class NotificationService {
 
       // For categories that only have push (keywordTaskAlerts, recommendedTaskAlerts)
       if (category === 'keywordTaskAlerts' || category === 'recommendedTaskAlerts') {
-        return false;
+        return (channel as string) === 'push' && (categoryPrefs as { push: boolean }).push === true;
       }
 
       // For other categories with multiple channels
       if ('push' in categoryPrefs && 'email' in categoryPrefs && 'sms' in categoryPrefs) {
-        const channelPrefs = categoryPrefs as { email: boolean; push: boolean; sms: boolean };
+        const channelPrefs = categoryPrefs as Record<string, boolean>;
         return channelPrefs[channel] === true;
       }
 
@@ -204,7 +204,7 @@ export class NotificationService {
 
       // Fail open for key real-time channels so task discovery/chat never silently drops.
       // Other channels/categories remain fail-closed to avoid spam.
-      if (channel === 'push' && shouldFailOpenForPush) {
+      if ((channel as string) === 'push' && shouldFailOpenForPush) {
         logger.warn('shouldSendNotification: failing open for push after preference-check error', {
           userId,
           category,
