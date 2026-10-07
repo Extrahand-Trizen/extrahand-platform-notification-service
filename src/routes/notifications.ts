@@ -166,6 +166,18 @@ router.get(
   asyncHandler(CampaignController.getCampaigns)
 );
 
+router.post(
+  '/campaigns/clear',
+  serviceAuthMiddleware,
+  asyncHandler(CampaignController.clearAppBroadcasts)
+);
+
+router.post(
+  '/campaigns/:id/cancel',
+  serviceAuthMiddleware,
+  asyncHandler(CampaignController.cancelCampaign)
+);
+
 router.get(
   '/campaigns/:id',
   serviceAuthMiddleware,

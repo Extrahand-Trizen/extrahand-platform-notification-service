@@ -2,6 +2,12 @@ import NotificationCampaign from '../models/NotificationCampaign';
 import { NotificationService } from './NotificationService';
 import { CampaignAudienceService } from './CampaignAudienceService';
 import logger from '../config/logger';
+import type { NotificationPayload } from '../types';
+import {
+  ADMIN_BROADCAST_EVENT_KEY,
+  ADMIN_BROADCAST_SOURCE,
+  CAMPAIGN_APPS,
+} from '../constants/campaignApps';
 
 export class CampaignWorkerService {
   private static isRunning = false;
@@ -70,13 +76,16 @@ export class CampaignWorkerService {
       // 1. Resolve matching users from user-service
       let userIds: string[] = [];
       try {
-        userIds = await CampaignAudienceService.resolveAudience(campaign.audienceFilter);
+        userIds = campaign.app
+          ? await CampaignAudienceService.resolveAppAudience(campaign.app)
+          : await CampaignAudienceService.resolveAudience(campaign.audienceFilter);
         campaign.audienceSize = userIds.length;
         await campaign.save();
         logger.info(`Resolved audience of size ${userIds.length} for campaign: ${campaign._id}`);
       } catch (err: any) {
         logger.error(`Failed to resolve audience for campaign ${campaign._id}:`, err);
         campaign.status = 'FAILED';
+        campaign.failureReason = err?.message || 'Failed to resolve audience';
         await campaign.save();
         this.isProcessing = false;
         return;
@@ -119,20 +128,56 @@ export class CampaignWorkerService {
         const chunk = userIds.slice(i, i + chunkSize);
         logger.info(`Sending batch chunk (${i} to ${i + chunk.length}) for campaign: ${campaign._id}`);
 
+        const broadcastData = campaign.app
+          ? {
+              recipientRole: CAMPAIGN_APPS[campaign.app].recipientRole,
+              source: ADMIN_BROADCAST_SOURCE,
+              app: campaign.app,
+              campaignId: campaign._id.toString(),
+              ...(campaign.imageUrl ? { imageUrl: campaign.imageUrl } : {}),
+              ...(campaign.deepLink ? { screen: campaign.deepLink, deepLink: campaign.deepLink } : {}),
+            }
+          : null;
+
+        if (broadcastData) {
+          try {
+            await NotificationService.createInAppBatchNotifications({
+              userIds: chunk,
+              title: campaign.title,
+              body: campaign.body,
+              type: 'info',
+              category: 'system',
+              data: broadcastData,
+            });
+          } catch (err: any) {
+            logger.error(`Failed to create in-app entries for campaign ${campaign._id} chunk at ${i}:`, err);
+          }
+        }
+
         // Loop inside chunk to invoke NotificationService (reusing preferences validation and token registration fetches)
         for (const userId of chunk) {
           try {
-            const result = await NotificationService.sendPushNotification(userId, {
-              type: 'promotions',
-              title: campaign.title,
-              body: campaign.body,
-              category: campaign.audienceFilter.category || 'promotions',
-              data: {
-                ...(campaign.imageUrl ? { imageUrl: campaign.imageUrl } : {}),
-                ...(campaign.deepLink ? { screen: campaign.deepLink, deepLink: campaign.deepLink } : {}),
-                campaignId: campaign._id.toString(),
-              }
-            });
+            const result = broadcastData
+              ? await NotificationService.sendPushNotification(userId, {
+                  type: ADMIN_BROADCAST_EVENT_KEY,
+                  title: campaign.title,
+                  body: campaign.body,
+                  category: 'system' as NotificationPayload['category'],
+                  imageUrl: campaign.imageUrl || undefined,
+                  skipWhatsApp: true,
+                  data: broadcastData,
+                })
+              : await NotificationService.sendPushNotification(userId, {
+                  type: 'promotions',
+                  title: campaign.title,
+                  body: campaign.body,
+                  category: campaign.audienceFilter.category || 'promotions',
+                  data: {
+                    ...(campaign.imageUrl ? { imageUrl: campaign.imageUrl } : {}),
+                    ...(campaign.deepLink ? { screen: campaign.deepLink, deepLink: campaign.deepLink } : {}),
+                    campaignId: campaign._id.toString(),
+                  },
+                });
 
             totalSent += result.sent;
             totalFailed += result.failed;
@@ -149,10 +194,11 @@ export class CampaignWorkerService {
         await campaign.save();
       }
 
-      // 3. Mark campaign execution complete
-      campaign.status = 'COMPLETED';
-      campaign.resumeCursor = undefined; // clear resume pointer
-      await campaign.save();
+      // 3. Mark campaign execution complete (unless it was cancelled during the last batch)
+      await NotificationCampaign.updateOne(
+        { _id: campaign._id, status: 'SENDING' },
+        { $set: { status: 'COMPLETED', resumeCursor: null } }
+      );
       logger.info(`Campaign ${campaign._id} completed processing. Sent: ${totalSent}, Failed: ${totalFailed}`);
 
     } catch (error: any) {

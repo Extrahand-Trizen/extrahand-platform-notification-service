@@ -235,7 +235,9 @@ export class NotificationService {
       const shouldSend = await this.shouldSendNotification(userId, category, 'push');
 
       // WhatsApp is a separate Settings toggle â€” try Dialog even if push is off.
-      fireDialogWhatsAppForPush(userId, notification);
+      if (!notification.skipWhatsApp) {
+        fireDialogWhatsAppForPush(userId, notification);
+      }
 
       if (!shouldSend) {
         logger.info(`Notification skipped - user preferences disabled`, {
@@ -316,6 +318,7 @@ export class NotificationService {
             notification: {
               title: notification.title,
               body: notification.body,
+              ...(notification.imageUrl ? { imageUrl: notification.imageUrl } : {}),
             },
             data: stringifiedData,
             ...soundPayload,
@@ -740,8 +743,8 @@ export class NotificationService {
             const currentRole = resolvedData.recipientRole;
 
             if ((taskDoc as any).bookingSource === 'book_now') {
-              resolvedData.recipientRole = 'partner';
-              logger.info('[NotificationService] STEP 3 - Role from bookingSource=book_now', { recipientRole: 'partner' });
+              resolvedData.recipientRole = currentRole === 'customer' ? 'customer' : 'partner';
+              logger.info('[NotificationService] STEP 3 - Role from bookingSource=book_now', { currentRole, recipientRole: resolvedData.recipientRole });
             } else if (currentRole === 'helper' || currentRole === 'tasker') {
               resolvedData.recipientRole = 'tasker';
               logger.info('[NotificationService] STEP 3 - Role from explicit currentRole', { currentRole, recipientRole: 'tasker' });
