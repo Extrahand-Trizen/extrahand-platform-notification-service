@@ -69,6 +69,23 @@ FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYour actual private key here\
 
 ## ✅ Current Status
 
+## Mobile App Push Credentials
+
+The helper app uses Firebase project `extrahand-ca02c`, while the primary
+notification-service credentials may belong to `extrahand-app`. Configure a
+separate Firebase Admin service account for the mobile project so assignment
+pushes can be sent to the helper app:
+
+```env
+FIREBASE_MOBILE_PROJECT_ID=extrahand-ca02c
+FIREBASE_MOBILE_CLIENT_EMAIL=<service-account-client-email>
+FIREBASE_MOBILE_PRIVATE_KEY="<service-account-private-key>"
+```
+
+Alternatively, set `FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH` to a mounted service
+account JSON file for `extrahand-ca02c`. Keep the key in local/deployment
+secrets; do not commit it. Partner assignment events use this mobile sender.
+
 ### Your `.env` File Status
 
 **What You Have:**

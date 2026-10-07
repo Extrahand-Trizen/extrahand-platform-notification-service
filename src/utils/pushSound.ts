@@ -31,6 +31,27 @@ function normalizeEventKey(value: unknown): string {
   return String(value).toUpperCase().replace(/[\s-]+/g, '_');
 }
 
+export function usesMobileProjectFcm(input: {
+  type?: string;
+  data?: Record<string, unknown> | null;
+}): boolean {
+  const data = input.data && typeof input.data === 'object' ? input.data : {};
+  const eventKey = normalizeEventKey(data.eventKey ?? data.event_key ?? input.type);
+  const action = String(data.action ?? '').trim().toLowerCase();
+
+  return (
+    eventKey === 'BOOK_NOW_PARTNER_ASSIGNED' ||
+    (eventKey === 'TASK_NEARBY' &&
+      String(data.bookingSource ?? data.booking_source ?? '').trim().toLowerCase() === 'quick_commerce' &&
+      action === 'apply_qc_order') ||
+    (eventKey === 'TASK_UPDATED' && action === 'assigned')
+  );
+}
+
+function isPartnerWorkAssignment(data: Record<string, unknown>, eventKey: string): boolean {
+  return eventKey === 'TASK_UPDATED' && String(data.action ?? '').trim().toLowerCase() === 'assigned';
+}
+
 export function usesCustomPushSound(input: {
   type?: string;
   category?: string;
@@ -40,6 +61,8 @@ export function usesCustomPushSound(input: {
   const eventKey = normalizeEventKey(
     data.eventKey ?? data.event_key ?? input.type,
   );
+
+  if (isPartnerWorkAssignment(data, eventKey)) return true;
 
   if (eventKey && CUSTOM_SOUND_EVENT_KEYS.has(eventKey)) {
     return true;
@@ -91,8 +114,11 @@ export function buildPushSoundPayload(input: {
     String(data.title ?? '').toLowerCase().includes('skill');
 
   if (usesCustomPushSound(input)) {
-    // Book Now ring uses its own dedicated channel and 15-second sound
-    if (eventKey === 'BOOK_NOW_PARTNER_ASSIGNED') {
+    // Book Now and partner work assignments use the dedicated ring sound.
+    if (
+      eventKey === 'BOOK_NOW_PARTNER_ASSIGNED' ||
+      isPartnerWorkAssignment(data, eventKey)
+    ) {
       return {
         android: {
           priority: 'high',

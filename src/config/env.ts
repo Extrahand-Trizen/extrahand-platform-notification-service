@@ -20,6 +20,10 @@ const envSchema = z.object({
   FIREBASE_CLIENT_EMAIL: z.string().email().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional(),
+  FIREBASE_MOBILE_PROJECT_ID: z.string().optional(),
+  FIREBASE_MOBILE_CLIENT_EMAIL: z.string().email().optional(),
+  FIREBASE_MOBILE_PRIVATE_KEY: z.string().optional(),
+  FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH: z.string().optional(),
   
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
