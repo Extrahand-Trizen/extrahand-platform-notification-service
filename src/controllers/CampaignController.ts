@@ -4,6 +4,8 @@ import NotificationCampaign from '../models/NotificationCampaign';
 import InAppNotification from '../models/InAppNotification';
 import { CampaignAudienceService } from '../services/CampaignAudienceService';
 import { ADMIN_BROADCAST_SOURCE, CAMPAIGN_APPS, isCampaignApp } from '../constants/campaignApps';
+
+const MAX_SELECTED_USERS = 500;
 import { BadRequestError, NotFoundError } from '../errors/AppError';
 import logger from '../config/logger';
 
@@ -56,10 +58,28 @@ export class CampaignController {
         throw new BadRequestError('scheduledAt must be a valid date');
       }
 
+      let selectedUserIds: string[] | undefined;
+      if (req.body.userIds !== undefined) {
+        if (!app) {
+          throw new BadRequestError('userIds can only be used together with app');
+        }
+        if (!Array.isArray(req.body.userIds)) {
+          throw new BadRequestError('userIds must be an array');
+        }
+        selectedUserIds = Array.from(
+          new Set(req.body.userIds.map((id: unknown) => String(id || '').trim()).filter(Boolean))
+        ) as string[];
+        if (selectedUserIds.length === 0 || selectedUserIds.length > MAX_SELECTED_USERS) {
+          throw new BadRequestError(`userIds must contain 1 to ${MAX_SELECTED_USERS} users`);
+        }
+      }
+
       // Query audience list to fetch count
-      const userIds = app
-        ? await CampaignAudienceService.resolveAppAudience(app)
-        : await CampaignAudienceService.resolveAudience(audienceFilter);
+      const userIds = selectedUserIds
+        ? selectedUserIds
+        : app
+          ? await CampaignAudienceService.resolveAppAudience(app)
+          : await CampaignAudienceService.resolveAudience(audienceFilter);
 
       const campaign = await NotificationCampaign.create({
         title,
@@ -68,6 +88,7 @@ export class CampaignController {
         deepLink,
         templateId,
         app: app || null,
+        userIds: selectedUserIds,
         audienceFilter: audienceFilter || {},
         audienceSize: userIds.length,
         status: 'QUEUED', // The worker polls for scheduledAt <= now to process scheduled ones

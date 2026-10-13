@@ -73,12 +73,24 @@ export class CampaignWorkerService {
       campaign.status = 'SENDING';
       await campaign.save();
 
-      // 1. Resolve matching users from user-service
+      // 1. Resolve matching users from user-service.
+      // Selected-user broadcasts must use the stored IDs only — never expand to the whole app.
       let userIds: string[] = [];
       try {
-        userIds = campaign.app
-          ? await CampaignAudienceService.resolveAppAudience(campaign.app)
-          : await CampaignAudienceService.resolveAudience(campaign.audienceFilter);
+        const selectedUserIds = Array.from(
+          new Set(
+            (Array.isArray(campaign.userIds) ? campaign.userIds : [])
+              .map((id) => String(id || '').trim())
+              .filter(Boolean)
+          )
+        );
+        if (selectedUserIds.length > 0) {
+          userIds = selectedUserIds;
+        } else if (campaign.app) {
+          userIds = await CampaignAudienceService.resolveAppAudience(campaign.app);
+        } else {
+          userIds = await CampaignAudienceService.resolveAudience(campaign.audienceFilter);
+        }
         campaign.audienceSize = userIds.length;
         await campaign.save();
         logger.info(`Resolved audience of size ${userIds.length} for campaign: ${campaign._id}`);

@@ -92,8 +92,7 @@ export class CampaignAudienceService {
         const responseData = response.data;
         const users = responseData?.data || [];
         const pagination = responseData?.pagination || {};
-        
-        totalPages = pagination.totalPages || 1;
+        totalPages = pagination.pages || pagination.totalPages || 1;
 
         for (const user of users) {
           // Check for userId or uid in profile object

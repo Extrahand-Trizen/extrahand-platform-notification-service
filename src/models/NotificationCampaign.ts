@@ -9,6 +9,8 @@ export interface INotificationCampaignDocument extends Document {
   templateId?: mongoose.Types.ObjectId;
   /** When set, the audience is every user of this app (audienceFilter is ignored). */
   app?: CampaignApp | null;
+  /** With `app`: send only to these users instead of every user of the app. */
+  userIds?: string[];
   audienceFilter: Record<string, any>;
   audienceSize: number;
   status: 'DRAFT' | 'QUEUED' | 'SENDING' | 'COMPLETED' | 'FAILED' | 'PARTIAL' | 'CANCELLED';
@@ -50,6 +52,10 @@ const NotificationCampaignSchema = new Schema<INotificationCampaignDocument>(
       enum: [...Object.keys(CAMPAIGN_APPS), null],
       default: null,
       index: true,
+    },
+    userIds: {
+      type: [String],
+      default: undefined,
     },
     audienceFilter: {
       type: Schema.Types.Mixed,
