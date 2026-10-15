@@ -344,8 +344,8 @@ export class NotificationService {
       const primaryProjectMatchesMobile =
         String(process.env.FIREBASE_PROJECT_ID || '').trim() === mobileProjectId;
       const messaging = useMobileProject
-        ? mobileMessaging || (primaryProjectMatchesMobile ? admin.messaging() : null)
-        : admin.messaging();
+        ? mobileMessaging || (primaryProjectMatchesMobile && admin.apps.length ? admin.messaging() : null)
+        : (admin.apps.length ? admin.messaging() : null);
 
       logger.info('[FCM_DELIVERY] Sender selected', {
         userId,

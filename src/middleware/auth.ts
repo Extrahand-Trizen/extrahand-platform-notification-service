@@ -34,6 +34,12 @@ export async function authMiddleware(
       tokenPrefix: idToken.substring(0, 20) + '...',
     });
 
+    if (!auth) {
+      logger.error('❌ [Auth Middleware] Firebase Auth is not initialized');
+      res.status(503).json({ error: 'Authentication service temporarily unavailable' });
+      return;
+    }
+
     const token = await auth.verifyIdToken(idToken);
     
     logger.info('✅ [Auth Middleware] Token verified', {

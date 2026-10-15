@@ -38,8 +38,11 @@ export function usesMobileProjectFcm(input: {
   const data = input.data && typeof input.data === 'object' ? input.data : {};
   const eventKey = normalizeEventKey(data.eventKey ?? data.event_key ?? input.type);
   const action = String(data.action ?? '').trim().toLowerCase();
+  const recipientRole = String(data.recipientRole ?? '').trim().toLowerCase();
 
   return (
+    recipientRole === 'seller' ||
+    eventKey.startsWith('QC_') ||
     eventKey === 'BOOK_NOW_PARTNER_ASSIGNED' ||
     (eventKey === 'TASK_NEARBY' &&
       String(data.bookingSource ?? data.booking_source ?? '').trim().toLowerCase() === 'quick_commerce' &&
