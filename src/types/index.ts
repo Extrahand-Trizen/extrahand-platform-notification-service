@@ -32,6 +32,10 @@ export interface NotificationPayload {
   body: string;
   data?: Record<string, any>;
   category?: keyof NotificationPreferences;
+  /** Shown as the large image on the system notification card. */
+  imageUrl?: string;
+  /** Do not mirror this push to WhatsApp (e.g. admin broadcasts). */
+  skipWhatsApp?: boolean;
 }
 
 

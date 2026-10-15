@@ -1,8 +1,46 @@
 import axios from 'axios';
 import { validateEnv } from '../config/env';
 import logger from '../config/logger';
+import { CAMPAIGN_APPS, CampaignApp } from '../constants/campaignApps';
 
 export class CampaignAudienceService {
+  /**
+   * Every user of one app, via user-service `match-users` (not paginated, so it
+   * is not capped by the admin list's page limits).
+   */
+  static async resolveAppAudience(app: CampaignApp): Promise<string[]> {
+    const env = validateEnv();
+    if (!env.USER_SERVICE_URL) {
+      throw new Error('USER_SERVICE_URL is not configured. Cannot resolve app audience.');
+    }
+
+    try {
+      const response = await axios.post(
+        `${env.USER_SERVICE_URL.replace(/\/$/, '')}/api/v1/profiles/internal/match-users`,
+        { type: 'role', criteria: { role: CAMPAIGN_APPS[app].userServiceRole } },
+        {
+          headers: {
+            'X-Service-Auth': env.SERVICE_AUTH_TOKEN || '',
+            'X-Service-Name': 'notification-service',
+          },
+          timeout: 30000,
+        }
+      );
+
+      const userIds: unknown[] = Array.isArray(response.data?.userIds) ? response.data.userIds : [];
+      const unique = Array.from(new Set(userIds.map((id) => String(id || '').trim()).filter(Boolean)));
+      logger.info(`Resolved ${unique.length} user(s) for app audience ${app}`);
+      return unique;
+    } catch (error: any) {
+      logger.error('Error resolving app audience from user-service:', {
+        app,
+        message: error?.message || 'Unknown error',
+        status: error?.response?.status,
+      });
+      throw new Error(`Failed to resolve ${app} audience: ${error?.message || 'Unknown error'}`);
+    }
+  }
+
   /**
    * Fetch all matching user IDs from user-service using filters
    */
@@ -54,8 +92,7 @@ export class CampaignAudienceService {
         const responseData = response.data;
         const users = responseData?.data || [];
         const pagination = responseData?.pagination || {};
-        
-        totalPages = pagination.totalPages || 1;
+        totalPages = pagination.pages || pagination.totalPages || 1;
 
         for (const user of users) {
           // Check for userId or uid in profile object
