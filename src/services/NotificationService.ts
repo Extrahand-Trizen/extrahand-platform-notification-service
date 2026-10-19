@@ -303,26 +303,29 @@ export class NotificationService {
         data: pushData,
       });
 
+      const alertPayload = {
+        title: notification.title,
+        body: notification.body,
+      };
+
       const message = notifeeOwned
         ? {
             data: stringifiedData,
             android: { priority: 'high' as const },
             apns: {
+              headers: {
+                'apns-priority': '10',
+                'apns-push-type': 'alert',
+              },
               payload: {
                 aps: {
                   'content-available': 1,
-                  alert: {
-                    title: notification.title,
-                    body: notification.body,
-                  },
+                  alert: alertPayload,
                   sound:
                     soundPayload?.apns?.payload?.aps?.sound ||
                     (playCustomSound ? 'urgent_notify_single_ring.wav' : 'default'),
                   badge: soundPayload?.apns?.payload?.aps?.badge ?? 1,
                 },
-              },
-              headers: {
-                'apns-priority': '10',
               },
             },
           }
@@ -333,7 +336,20 @@ export class NotificationService {
               ...(notification.imageUrl ? { imageUrl: notification.imageUrl } : {}),
             },
             data: stringifiedData,
-            ...soundPayload,
+            android: soundPayload.android,
+            apns: {
+              headers: {
+                'apns-priority': '10',
+                'apns-push-type': 'alert',
+              },
+              payload: {
+                aps: {
+                  alert: alertPayload,
+                  sound: soundPayload?.apns?.payload?.aps?.sound || 'default',
+                  badge: soundPayload?.apns?.payload?.aps?.badge ?? 1,
+                },
+              },
+            },
           };
 
       // Send to all tokens (circuit breaker â€” push failures must not break callers)
@@ -354,16 +370,19 @@ export class NotificationService {
         return { success: true, sent: simulatedTokens.length, failed: 0 };
       }
 
-      const useMobileProject = usesMobileProjectFcm({
-        type: notification.type,
-        data: pushData,
-      });
+      const hasMobileTokens = tokens.some(t => t.platform === 'ios' || t.platform === 'android');
+      const useMobileProject =
+        hasMobileTokens ||
+        usesMobileProjectFcm({
+          type: notification.type,
+          data: pushData,
+        });
       const mobileProjectId = process.env.FIREBASE_MOBILE_PROJECT_ID || 'extrahand-ca02c';
       const primaryProjectMatchesMobile =
         String(process.env.FIREBASE_PROJECT_ID || '').trim() === mobileProjectId;
       const messaging = useMobileProject
         ? mobileMessaging || (primaryProjectMatchesMobile && admin.apps.length ? admin.messaging() : null)
-        : (admin.apps.length ? admin.messaging() : null);
+        : (admin.apps.length ? admin.messaging() : mobileMessaging);
 
       logger.info('[FCM_DELIVERY] Sender selected', {
         userId,
