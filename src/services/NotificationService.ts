@@ -18,11 +18,11 @@ import { fireDialogWhatsAppForPush } from '../clients/dialogWhatsAppBridge';
 
 /**
  * Which app's in-app feed a read/list/clear call is scoped to.
- * - `helper`  → helper/tasker app (also matches legacy untagged notifications)
- * - `partner` → customer app
+ * - `customer` → customer app (strictly `data.recipientRole === 'customer'`)
+ * - `helper` / `partner` → helper/tasker/partner app (matches partner, helper, tasker + legacy untagged)
  * - `seller`  → seller / quick-commerce app (strictly `data.recipientRole === 'seller'`)
  */
-export type NotificationRoleFilter = 'helper' | 'partner' | 'seller';
+export type NotificationRoleFilter = 'customer' | 'helper' | 'partner' | 'seller';
 
 export class NotificationService {
   /**
@@ -219,12 +219,59 @@ export class NotificationService {
   }
 
   /**
-   * Get all FCM tokens for a user
+   * Get all FCM tokens for a user, optionally filtered by target app/role.
    */
-  static async getUserFCMTokens(userId: string): Promise<IFCMTokenDocument[]> {
+  static async getUserFCMTokens(userId: string, targetRole?: string): Promise<IFCMTokenDocument[]> {
     try {
       const tokens = await FCMToken.find({ userId }).sort({ lastActive: -1 });
-      return tokens;
+      if (!targetRole) {
+        return tokens;
+      }
+
+      const norm = targetRole.trim().toLowerCase();
+      return tokens.filter((t) => {
+        const tokenRole = t.role ? String(t.role).trim().toLowerCase() : '';
+        const tokenApp = t.app ? String(t.app).trim().toLowerCase() : '';
+
+        if (norm === 'seller') {
+          // Strictly only seller tokens
+          return tokenRole === 'seller' || tokenApp === 'com.extrahand.seller';
+        }
+
+        if (norm === 'customer') {
+          // Must NEVER be seller or partner/tasker
+          if (tokenRole === 'seller' || tokenApp === 'com.extrahand.seller') return false;
+          if (
+            tokenRole === 'partner' ||
+            tokenRole === 'tasker' ||
+            tokenRole === 'helper' ||
+            tokenApp === 'com.extrahand.helper'
+          ) {
+            return false;
+          }
+          // Explicit customer token or customer app package
+          if (tokenRole === 'customer' || tokenApp === 'com.extrahand') return true;
+          // Untagged web push tokens are customer web by default
+          if (t.platform === 'web' && !tokenRole) return true;
+          // Untagged mobile tokens without a role must NOT receive customer notifications,
+          // preventing cross-app leakage on shared test/seller devices.
+          return false;
+        }
+
+        if (norm === 'partner' || norm === 'tasker' || norm === 'helper') {
+          // Must NEVER be seller or customer
+          if (tokenRole === 'seller' || tokenApp === 'com.extrahand.seller') return false;
+          if (tokenRole === 'customer' || tokenApp === 'com.extrahand') return false;
+          return (
+            tokenRole === 'partner' ||
+            tokenRole === 'tasker' ||
+            tokenRole === 'helper' ||
+            tokenApp === 'com.extrahand.helper'
+          );
+        }
+
+        return true;
+      });
     } catch (error: any) {
       logger.error('Error fetching FCM tokens:', error);
       throw new Error('Failed to fetch FCM tokens');
@@ -243,7 +290,7 @@ export class NotificationService {
       const category = notification.category || 'taskUpdates';
       const shouldSend = await this.shouldSendNotification(userId, category, 'push');
 
-      // WhatsApp is a separate Settings toggle â€” try Dialog even if push is off.
+      // WhatsApp is a separate Settings toggle — try Dialog even if push is off.
       if (!notification.skipWhatsApp) {
         fireDialogWhatsAppForPush(userId, notification);
       }
@@ -257,18 +304,6 @@ export class NotificationService {
         return { success: true, sent: 0, failed: 0 };
       }
 
-      // Get user's FCM tokens
-      const tokens = await this.getUserFCMTokens(userId);
-
-      if (tokens.length === 0) {
-        logger.warn('[FCM_DELIVERY] Stopped: recipient has no registered device tokens', {
-          userId,
-          eventKey: notification.type,
-          category,
-        });
-        return { success: true, sent: 0, failed: 0 };
-      }
-
       const pushData: Record<string, unknown> = {
         type: notification.type,
         eventKey: notification.type,
@@ -277,6 +312,43 @@ export class NotificationService {
         body: notification.body,
         ...(notification.data || {}),
       };
+
+      // Determine targetRole for this push notification
+      let targetRole: string | undefined = undefined;
+      const explicitRole = pushData.recipientRole ?? (notification as any).recipientRole ?? pushData.role;
+      if (explicitRole) {
+        targetRole = String(explicitRole).trim().toLowerCase();
+      } else {
+        const eventKey = String(pushData.eventKey || pushData.type || '').trim().toUpperCase();
+        const cat = String(pushData.category || notification.category || '').trim();
+        if (eventKey === 'QC_ORDER_PLACED' || eventKey === 'QC_STOCK_OUT' || eventKey === 'QC_SHOP_PAUSED') {
+          targetRole = 'seller';
+        } else if (eventKey.startsWith('QC_ORDER_')) {
+          targetRole = 'customer';
+        } else if (
+          eventKey === 'BOOK_NOW_PARTNER_ASSIGNED' ||
+          eventKey.startsWith('HELPER_') ||
+          eventKey.startsWith('TASK_') ||
+          eventKey.startsWith('OFFER_') ||
+          cat === 'recommendedTaskAlerts' ||
+          cat === 'keywordTaskAlerts'
+        ) {
+          targetRole = 'partner';
+        }
+      }
+
+      // Get user's FCM tokens scoped to the target role
+      const tokens = await this.getUserFCMTokens(userId, targetRole);
+
+      if (tokens.length === 0) {
+        logger.warn('[FCM_DELIVERY] Stopped: recipient has no registered device tokens matching target role', {
+          userId,
+          eventKey: notification.type,
+          category,
+          targetRole: targetRole ?? 'all',
+        });
+        return { success: true, sent: 0, failed: 0 };
+      }
 
       const soundPayload = buildPushSoundPayload({
         type: notification.type,
@@ -522,14 +594,26 @@ export class NotificationService {
     userId: string,
     token: string,
     platform: 'ios' | 'android' | 'web',
-    deviceId?: string
+    deviceId?: string,
+    role?: string,
+    app?: string
   ): Promise<IFCMTokenDocument> {
     const normalizedToken = typeof token === 'string' ? token.trim() : '';
     if (!normalizedToken) {
       throw new Error('FCM token is required');
     }
 
-    const updatePayload = {
+    let normalizedRole: 'customer' | 'partner' | 'tasker' | 'seller' | undefined;
+    if (typeof role === 'string') {
+      const r = role.trim().toLowerCase();
+      if (r === 'customer' || r === 'partner' || r === 'tasker' || r === 'seller') {
+        normalizedRole = r as any;
+      } else if (r === 'helper') {
+        normalizedRole = 'partner';
+      }
+    }
+
+    const updatePayload: Record<string, any> = {
       userId,
       token: normalizedToken,
       platform,
@@ -537,8 +621,15 @@ export class NotificationService {
       lastActive: new Date(),
     };
 
+    if (normalizedRole) {
+      updatePayload.role = normalizedRole;
+    }
+    if (app && typeof app === 'string') {
+      updatePayload.app = app.trim();
+    }
+
     try {
-      // Atomic upsert â€” safe when the app re-registers the same device token
+      // Atomic upsert — safe when the app re-registers the same device token
       // (e.g. account switch) or when concurrent POST /token requests race.
       const fcmToken = await FCMToken.findOneAndUpdate(
         { token: normalizedToken },
@@ -552,6 +643,8 @@ export class NotificationService {
 
       logger.info(`Registered/updated FCM token for user: ${userId}`, {
         platform,
+        role: normalizedRole,
+        app,
         hasDeviceId: !!deviceId,
       });
 
@@ -1037,11 +1130,23 @@ export class NotificationService {
     if (!role) {
       return baseQuery;
     }
-    if (role === 'helper') {
+    if (role === 'seller') {
+      return {
+        ...baseQuery,
+        'data.recipientRole': 'seller',
+      };
+    }
+    if (role === 'customer') {
+      return {
+        ...baseQuery,
+        'data.recipientRole': 'customer',
+      };
+    }
+    if (role === 'helper' || role === 'partner') {
       return {
         ...baseQuery,
         $or: [
-          { 'data.recipientRole': { $in: ['helper', 'tasker'] } },
+          { 'data.recipientRole': { $in: ['partner', 'helper', 'tasker'] } },
           { 'data.recipientRole': { $exists: false } },
           { 'data.recipientRole': null },
           { 'data.recipientRole': '' },
@@ -1049,16 +1154,7 @@ export class NotificationService {
         ]
       };
     }
-    if (role === 'seller') {
-      return {
-        ...baseQuery,
-        'data.recipientRole': 'seller',
-      };
-    }
-    return {
-      ...baseQuery,
-      'data.recipientRole': { $in: ['partner', 'customer'] },
-    };
+    return baseQuery;
   }
 
   /**

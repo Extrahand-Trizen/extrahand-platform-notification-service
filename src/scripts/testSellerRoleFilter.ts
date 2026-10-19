@@ -33,17 +33,25 @@ async function run() {
   assert(titles[0] === 'QC new order', 'the one seller notification is the QC seller order');
   assert(seller.unreadCount === 1, `seller unread count is 1 (got ${seller.unreadCount})`);
 
+  const customer = await NotificationService.getInAppNotifications(userId, 50, 0, false, 'customer');
+  const customerTitles = customer.notifications.map((n: any) => n.title).sort();
+  assert(customer.notifications.length === 1, `customer sees exactly 1 notification (got ${customer.notifications.length}: ${customerTitles.join(', ')})`);
+  assert(customerTitles[0] === 'QC order accepted', 'customer notification is strictly customer QC order accepted');
+  assert(customer.unreadCount === 1, `customer unread count is 1 (got ${customer.unreadCount})`);
+
   const noFilter = await NotificationService.getInAppNotifications(userId, 50, 0, false);
   assert(noFilter.notifications.length === 4, `no-filter still returns all 4 (got ${noFilter.notifications.length})`);
 
   const helper = await NotificationService.getInAppNotifications(userId, 50, 0, false, 'helper');
   const helperTitles = helper.notifications.map((n: any) => n.title).sort();
-  assert(!helperTitles.includes('QC new order'), `helper feed no longer leaks the seller order (got ${helperTitles.join(', ')})`);
+  assert(!helperTitles.includes('QC new order'), `helper feed does not leak seller notification (got ${helperTitles.join(', ')})`);
+  assert(!helperTitles.includes('QC order accepted'), `helper feed does not leak customer notification (got ${helperTitles.join(', ')})`);
+  assert(helperTitles.includes('Task assigned'), 'helper feed includes task assigned');
 
   // mark-all + clear are scoped too
   const marked = await NotificationService.markAllInAppNotificationsAsRead(userId, 'seller');
   assert(marked.modifiedCount === 1, `mark-all(seller) touched only 1 (got ${marked.modifiedCount})`);
-  const customerStillUnread = await NotificationService.getUnreadNotificationCount(userId, 'partner');
+  const customerStillUnread = await NotificationService.getUnreadNotificationCount(userId, 'customer');
   assert(customerStillUnread === 1, `customer notification still unread after seller mark-all (got ${customerStillUnread})`);
 
   await InAppNotification.deleteMany({ userId });

@@ -6,7 +6,7 @@ import logger from '../config/logger';
 
 /** Parse the `?role=` query param into a recognised in-app feed scope. */
 function parseRoleFilter(role: unknown): NotificationRoleFilter | undefined {
-  return role === 'helper' || role === 'partner' || role === 'seller'
+  return role === 'customer' || role === 'helper' || role === 'partner' || role === 'seller'
     ? (role as NotificationRoleFilter)
     : undefined;
 }
@@ -23,7 +23,7 @@ export class NotificationController {
         throw new BadRequestError('User ID is required');
       }
 
-      const { token, platform, deviceId } = req.body;
+      const { token, platform, deviceId, role, app } = req.body;
 
       if (!token || !platform) {
         throw new BadRequestError('Token and platform are required');
@@ -37,7 +37,9 @@ export class NotificationController {
         userId,
         token,
         platform,
-        deviceId
+        deviceId,
+        role,
+        app
       );
 
       res.json({
@@ -45,7 +47,9 @@ export class NotificationController {
         data: {
           token: fcmToken.token,
           platform: fcmToken.platform,
-          deviceId: fcmToken.deviceId
+          deviceId: fcmToken.deviceId,
+          role: fcmToken.role,
+          app: fcmToken.app,
         },
         message: 'FCM token registered successfully'
       });
@@ -145,12 +149,13 @@ export class NotificationController {
   static async sendNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Support both old format (single userId) and new format (recipients array)
-      const { userId, recipients, type, eventKey, title, body, data, category } = req.body;
+      const { userId, recipients, type, eventKey, title, body, data, category, role, recipientRole, targetApp } = req.body;
 
       // Accept either userId (single) or recipients (array)
       const targetUsers = recipients && Array.isArray(recipients) ? recipients : [userId];
       const notificationType = type || eventKey;
       const sourceService = req.headers['x-service-name'];
+      const resolvedRole = role || recipientRole || data?.recipientRole || data?.role;
 
       if (!targetUsers || targetUsers.length === 0 || !notificationType || !title || !body) {
         throw new BadRequestError('userId (or recipients array), type (or eventKey), title, and body are required');
@@ -163,7 +168,7 @@ export class NotificationController {
         recipientCount: targetUsers.length,
         taskId: data?.taskId,
         action: data?.action,
-        recipientRole: data?.recipientRole,
+        recipientRole: resolvedRole,
       });
 
       // Send to all target users
@@ -178,6 +183,8 @@ export class NotificationController {
             event_key: notificationType,
             title,
             body,
+            ...(resolvedRole ? { recipientRole: resolvedRole, role: resolvedRole } : {}),
+            ...(targetApp ? { targetApp } : {}),
             entityType:
               (data && typeof data === 'object' && (data as Record<string, unknown>).entityType) ||
               (data && typeof data === 'object' && (data as Record<string, unknown>).entity_type) ||

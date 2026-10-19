@@ -5,6 +5,8 @@ export interface IFCMTokenDocument extends Document {
   token: string;
   platform: 'ios' | 'android' | 'web';
   deviceId?: string;
+  role?: 'customer' | 'partner' | 'tasker' | 'seller';
+  app?: string;
   lastActive: Date;
   createdAt?: Date;
   updatedAt?: Date;
@@ -32,6 +34,15 @@ const FCMTokenSchema = new Schema<IFCMTokenDocument>({
     type: String,
     index: true
   },
+  role: {
+    type: String,
+    enum: ['customer', 'partner', 'tasker', 'seller'],
+    index: true
+  },
+  app: {
+    type: String,
+    index: true
+  },
   lastActive: {
     type: Date,
     default: Date.now,
@@ -43,6 +54,7 @@ const FCMTokenSchema = new Schema<IFCMTokenDocument>({
 
 // Compound index for user + platform queries
 FCMTokenSchema.index({ userId: 1, platform: 1 });
+FCMTokenSchema.index({ userId: 1, role: 1 });
 
 // Remove old tokens when new one is added for same device
 FCMTokenSchema.pre('save', async function(next) {
