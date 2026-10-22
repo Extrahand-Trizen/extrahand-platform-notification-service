@@ -1,3 +1,4 @@
+
 # Use Node.js 18 LTS Alpine image for smaller size
 FROM node:18-alpine AS base
 
@@ -6,7 +7,7 @@ RUN apk update && apk upgrade && \
     apk add --no-cache dumb-init curl && \
     rm -rf /var/cache/apk/*
 
-# Create app directory with proper permissions
+# Create app directory
 WORKDIR /app
 
 # Create non-root user for security
@@ -35,7 +36,7 @@ ARG CACHE_BUST=1
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install all dependencies (including dev dependencies for TypeScript)
+# Install all dependencies, including dev dependencies for TypeScript
 RUN if [ -f package-lock.json ]; then \
       npm ci; \
     else \
@@ -45,7 +46,7 @@ RUN if [ -f package-lock.json ]; then \
 # Copy TypeScript configuration
 COPY tsconfig.json ./
 
-# ✨ CRITICAL: Add cache buster to force fresh code copy
+# Cache buster to force fresh code copy
 RUN echo "Cache bust: ${CACHE_BUST}" > /tmp/cache-bust.txt
 
 # Copy source code
@@ -54,21 +55,21 @@ COPY src ./src
 # Build TypeScript to JavaScript
 RUN npm run build
 
-# Remove dev dependencies after build
+# Remove development dependencies after build
 RUN npm prune --production
 
 # Production stage
 FROM base AS production
 
-# Set default environment variables (can be overridden at runtime)
-# Sensitive variables should be provided via CapRover envVars, not build args
+# Set default environment variables
+# Sensitive variables must be supplied at runtime via CapRover
 ENV NODE_ENV=production
 ENV PORT=4005
 ENV LOG_LEVEL=info
 ENV RATE_LIMIT_WINDOW_MS=900000
 ENV RATE_LIMIT_MAX_REQUESTS=1000
 
-# Note: The following environment variables should be set at runtime via CapRover:
+# Runtime environment variables expected through CapRover:
 # - CORS_ORIGIN
 # - MONGODB_URI
 # - MONGODB_DB
@@ -76,22 +77,30 @@ ENV RATE_LIMIT_MAX_REQUESTS=1000
 # - FIREBASE_CLIENT_EMAIL
 # - FIREBASE_PRIVATE_KEY
 # - FIREBASE_SERVICE_ACCOUNT_PATH
-# - FIREBASE_MOBILE_PROJECT_ID (extrahand-ca02c for mobile assignment pushes)
-# - FIREBASE_MOBILE_CLIENT_EMAIL and FIREBASE_MOBILE_PRIVATE_KEY, or
+# - FIREBASE_MOBILE_PROJECT_ID
+# - FIREBASE_MOBILE_CLIENT_EMAIL
+# - FIREBASE_MOBILE_PRIVATE_KEY
 # - FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH
 # - SERVICE_AUTH_TOKEN
 
-# Copy production dependencies from dependencies stage
-COPY --from=dependencies --chown=nodeuser:nodejs /app/node_modules ./node_modules
+# Copy production dependencies
+COPY --from=dependencies --chown=nodeuser:nodejs \
+    /app/node_modules ./node_modules
 
-# Copy compiled JavaScript from build stage
-COPY --from=build --chown=nodeuser:nodejs /app/dist ./dist
-COPY --from=build --chown=nodeuser:nodejs /app/package.json ./
+# Copy compiled application
+COPY --from=build --chown=nodeuser:nodejs \
+    /app/dist ./dist
 
-# Create logs directory with proper permissions
-RUN mkdir -p logs && chown -R nodeuser:nodejs logs
+COPY --from=build --chown=nodeuser:nodejs \
+    /app/package.json ./package.json
 
-# Remove unnecessary files for production
+# Create runtime directories with write permissions
+# Fixes EACCES when notifications.js creates /app/uploads
+RUN mkdir -p /app/logs /app/uploads && \
+    chown -R 1001:1001 /app/logs /app/uploads && \
+    chmod 755 /app/logs /app/uploads
+
+# Remove unnecessary files from the production image
 RUN rm -rf \
     .git \
     .gitignore \
@@ -104,18 +113,18 @@ RUN rm -rf \
     node_modules/typescript \
     node_modules/@types
 
-# Switch to non-root user
+# Run the application as a non-root user
 USER nodeuser
 
-# Expose port
+# Expose application port
 EXPOSE 4005
 
-# ✅ HEALTH CHECK - Check localhost inside container
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:4005/api/v1/health || exit 1
 
 # Use dumb-init for proper signal handling
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the application (run compiled JavaScript)
+# Start the application
 CMD ["node", "dist/server.js"]

@@ -71,7 +71,7 @@ export function usesMobileProjectFcm(input: {
       String(data.bookingSource ?? data.booking_source ?? '').trim().toLowerCase() === 'quick_commerce' &&
       action === 'apply_qc_order') ||
     (eventKey === 'TASK_UPDATED' && action === 'assigned') ||
-    isPartnerBookNowOffer(data, eventKey)
+    isPartnerBookNowOffer(data, eventKey) ||
     eventKey.startsWith('QC_') ||
     eventKey.startsWith('BOOK_NOW_') ||
     eventKey.startsWith('TASK_') ||
