@@ -5,7 +5,6 @@ import logger from '../config/logger';
 import NotificationPreferences from '../models/NotificationPreferences';
 import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
-import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
 import {
   buildPushSoundPayload,
@@ -564,17 +563,15 @@ export class NotificationService {
   /**
    * Remove FCM token
    */
-  static async removeToken(token: string): Promise<void> {
+  static async removeToken(token: string, userId: string): Promise<void> {
     try {
-      const result = await FCMToken.deleteOne({ token });
-      if (result.deletedCount === 0) {
-        throw new NotFoundError('FCM token not found');
+      const result = await FCMToken.deleteOne({ token, userId });
+      if (result.deletedCount > 0) {
+        logger.info('Removed FCM token', { userId });
+      } else {
+        logger.info('FCM token was already absent for user', { userId });
       }
-      logger.info(`Removed FCM token`);
     } catch (error: any) {
-      if (error instanceof NotFoundError) {
-        throw error;
-      }
       logger.error('Error removing FCM token:', error);
       throw new Error(`Failed to remove FCM token: ${error.message}`);
     }

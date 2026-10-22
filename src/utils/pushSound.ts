@@ -1,6 +1,5 @@
 /**
- * Custom push sound applies only to task-match alerts driven by profile
- * categories/skills (not keyword alerts or general task updates).
+ * Custom push sounds apply to matching alerts, Book Now offers, and partner assignments.
  */
 
 export const PUSH_NOTIFICATION_SOUND_ANDROID = 'urgent_notify_single_ring';
@@ -44,12 +43,22 @@ export function usesMobileProjectFcm(input: {
     (eventKey === 'TASK_NEARBY' &&
       String(data.bookingSource ?? data.booking_source ?? '').trim().toLowerCase() === 'quick_commerce' &&
       action === 'apply_qc_order') ||
-    (eventKey === 'TASK_UPDATED' && action === 'assigned')
+    (eventKey === 'TASK_UPDATED' && action === 'assigned') ||
+    isPartnerBookNowOffer(data, eventKey)
   );
 }
 
 function isPartnerWorkAssignment(data: Record<string, unknown>, eventKey: string): boolean {
   return eventKey === 'TASK_UPDATED' && String(data.action ?? '').trim().toLowerCase() === 'assigned';
+}
+
+function isPartnerBookNowOffer(data: Record<string, unknown>, eventKey: string): boolean {
+  return (
+    eventKey === 'TASK_UPDATED' &&
+    String(data.action ?? '').trim().toLowerCase() === 'book_now_offer' &&
+    String(data.recipientRole ?? '').trim().toLowerCase() === 'partner' &&
+    String(data.bookingSource ?? data.booking_source ?? '').trim().toLowerCase() === 'book_now'
+  );
 }
 
 export function usesCustomPushSound(input: {
@@ -62,7 +71,7 @@ export function usesCustomPushSound(input: {
     data.eventKey ?? data.event_key ?? input.type,
   );
 
-  if (isPartnerWorkAssignment(data, eventKey)) return true;
+  if (isPartnerWorkAssignment(data, eventKey) || isPartnerBookNowOffer(data, eventKey)) return true;
 
   if (eventKey && CUSTOM_SOUND_EVENT_KEYS.has(eventKey)) {
     return true;
@@ -117,7 +126,8 @@ export function buildPushSoundPayload(input: {
     // Book Now and partner work assignments use the dedicated ring sound.
     if (
       eventKey === 'BOOK_NOW_PARTNER_ASSIGNED' ||
-      isPartnerWorkAssignment(data, eventKey)
+      isPartnerWorkAssignment(data, eventKey) ||
+      isPartnerBookNowOffer(data, eventKey)
     ) {
       return {
         android: {
