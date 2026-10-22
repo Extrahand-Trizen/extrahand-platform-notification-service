@@ -5,7 +5,6 @@ import logger from '../config/logger';
 import NotificationPreferences from '../models/NotificationPreferences';
 import FCMToken, { IFCMTokenDocument } from '../models/FCMToken';
 import { NotificationPayload, NotificationPreferences as INotificationPreferences } from '../types';
-import { NotFoundError } from '../errors/AppError';
 import { validateEnv } from '../config/env';
 import {
   buildPushSoundPayload,
@@ -375,26 +374,29 @@ export class NotificationService {
         data: pushData,
       });
 
+      const alertPayload = {
+        title: notification.title,
+        body: notification.body,
+      };
+
       const message = notifeeOwned
         ? {
             data: stringifiedData,
             android: { priority: 'high' as const },
             apns: {
+              headers: {
+                'apns-priority': '10',
+                'apns-push-type': 'alert',
+              },
               payload: {
                 aps: {
                   'content-available': 1,
-                  alert: {
-                    title: notification.title,
-                    body: notification.body,
-                  },
+                  alert: alertPayload,
                   sound:
                     soundPayload?.apns?.payload?.aps?.sound ||
                     (playCustomSound ? 'urgent_notify_single_ring.wav' : 'default'),
                   badge: soundPayload?.apns?.payload?.aps?.badge ?? 1,
                 },
-              },
-              headers: {
-                'apns-priority': '10',
               },
             },
           }
@@ -405,7 +407,20 @@ export class NotificationService {
               ...(notification.imageUrl ? { imageUrl: notification.imageUrl } : {}),
             },
             data: stringifiedData,
-            ...soundPayload,
+            android: soundPayload.android,
+            apns: {
+              headers: {
+                'apns-priority': '10',
+                'apns-push-type': 'alert',
+              },
+              payload: {
+                aps: {
+                  alert: alertPayload,
+                  sound: soundPayload?.apns?.payload?.aps?.sound || 'default',
+                  badge: soundPayload?.apns?.payload?.aps?.badge ?? 1,
+                },
+              },
+            },
           };
 
       // Send to all tokens (circuit breaker â€” push failures must not break callers)
@@ -426,16 +441,19 @@ export class NotificationService {
         return { success: true, sent: simulatedTokens.length, failed: 0 };
       }
 
-      const useMobileProject = usesMobileProjectFcm({
-        type: notification.type,
-        data: pushData,
-      });
+      const hasMobileTokens = tokens.some(t => t.platform === 'ios' || t.platform === 'android');
+      const useMobileProject =
+        hasMobileTokens ||
+        usesMobileProjectFcm({
+          type: notification.type,
+          data: pushData,
+        });
       const mobileProjectId = process.env.FIREBASE_MOBILE_PROJECT_ID || 'extrahand-ca02c';
       const primaryProjectMatchesMobile =
         String(process.env.FIREBASE_PROJECT_ID || '').trim() === mobileProjectId;
       const messaging = useMobileProject
         ? mobileMessaging || (primaryProjectMatchesMobile && admin.apps.length ? admin.messaging() : null)
-        : (admin.apps.length ? admin.messaging() : null);
+        : (admin.apps.length ? admin.messaging() : mobileMessaging);
 
       logger.info('[FCM_DELIVERY] Sender selected', {
         userId,
@@ -676,17 +694,15 @@ export class NotificationService {
   /**
    * Remove FCM token
    */
-  static async removeToken(token: string): Promise<void> {
+  static async removeToken(token: string, userId: string): Promise<void> {
     try {
-      const result = await FCMToken.deleteOne({ token });
-      if (result.deletedCount === 0) {
-        throw new NotFoundError('FCM token not found');
+      const result = await FCMToken.deleteOne({ token, userId });
+      if (result.deletedCount > 0) {
+        logger.info('Removed FCM token', { userId });
+      } else {
+        logger.info('FCM token was already absent for user', { userId });
       }
-      logger.info(`Removed FCM token`);
     } catch (error: any) {
-      if (error instanceof NotFoundError) {
-        throw error;
-      }
       logger.error('Error removing FCM token:', error);
       throw new Error(`Failed to remove FCM token: ${error.message}`);
     }

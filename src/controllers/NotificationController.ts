@@ -68,13 +68,18 @@ export class NotificationController {
    */
   static async removeToken(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      const userId = req.user?.uid || (req as any).userId;
+      if (!userId) {
+        throw new BadRequestError('User ID is required');
+      }
+
       const { token } = req.body;
 
       if (!token) {
         throw new BadRequestError('Token is required');
       }
 
-      await NotificationService.removeToken(token);
+      await NotificationService.removeToken(token, userId);
 
       res.json({
         success: true,
@@ -152,7 +157,9 @@ export class NotificationController {
       const { userId, recipients, type, eventKey, title, body, data, category, role, recipientRole, targetApp } = req.body;
 
       // Accept either userId (single) or recipients (array)
-      const targetUsers = recipients && Array.isArray(recipients) ? recipients : [userId];
+      const targetUsers = Array.from(
+        new Set((recipients && Array.isArray(recipients) ? recipients : [userId]).filter(Boolean)),
+      );
       const notificationType = type || eventKey;
       const sourceService = req.headers['x-service-name'];
       const resolvedRole = role || recipientRole || data?.recipientRole || data?.role;
@@ -174,51 +181,74 @@ export class NotificationController {
       // Send to all target users
       let totalSent = 0;
       let totalFailed = 0;
+      const deliveredUserIds: string[] = [];
 
-      for (const uid of targetUsers) {
-        try {
-          const mergedData = {
-            ...(data && typeof data === 'object' ? data : {}),
-            eventKey: notificationType,
-            event_key: notificationType,
-            title,
-            body,
-            ...(resolvedRole ? { recipientRole: resolvedRole, role: resolvedRole } : {}),
-            ...(targetApp ? { targetApp } : {}),
-            entityType:
-              (data && typeof data === 'object' && (data as Record<string, unknown>).entityType) ||
-              (data && typeof data === 'object' && (data as Record<string, unknown>).entity_type) ||
-              'task',
-          };
+const deliveryResults: Array<{
+        userId: string;
+        sent: number;
+        failed: number;
+      }> = [];
+      const concurrency = 10;
+      for (let index = 0; index < targetUsers.length; index += concurrency) {
+        const recipients = targetUsers.slice(index, index + concurrency);
+        const batchResults = await Promise.all(
+          recipients.map(async (uid) => {
+            try {
+              const mergedData = {
+                ...(data && typeof data === 'object' ? data : {}),
+                eventKey: notificationType,
+                event_key: notificationType,
+                title,
+                body,
+                ...(resolvedRole ? { recipientRole: resolvedRole, role: resolvedRole } : {}),
+                ...(targetApp ? { targetApp } : {}),
+                entityType:
+                  (data && typeof data === 'object' && (data as Record<string, unknown>).entityType) ||
+                  (data && typeof data === 'object' && (data as Record<string, unknown>).entity_type) ||
+                  'task',
+              };
 
-          const result = await NotificationService.sendPushNotification(uid, {
-            type: notificationType,
-            title,
-            body,
-            data: mergedData,
-            category,
-          });
-          totalSent += result.sent || 0;
-          totalFailed += result.failed || 0;
-          logger.info('[NOTIFICATION_HANDOFF] Recipient delivery completed', {
-            sourceService,
-            eventKey: notificationType,
-            userId: uid,
-            taskId: data?.taskId,
-            sent: result.sent || 0,
-            failed: result.failed || 0,
-          });
-        } catch (error) {
-          totalFailed++;
-          logger.error('Error sending notification to user', { userId: uid, error });
-        }
+              const result = await NotificationService.sendPushNotification(uid, {
+                type: notificationType,
+                title,
+                body,
+                data: mergedData,
+                category,
+              });
+              logger.info('[NOTIFICATION_HANDOFF] Recipient delivery completed', {
+                sourceService,
+                eventKey: notificationType,
+                userId: uid,
+                taskId: data?.taskId,
+                sent: result.sent || 0,
+                failed: result.failed || 0,
+              });
+              return {
+                userId: uid,
+                sent: result.sent || 0,
+                failed: result.failed || 0,
+              };
+            } catch (error) {
+              logger.error('Error sending notification to user', { userId: uid, error });
+              return { userId: uid, sent: 0, failed: 1 };
+            }
+          }),
+        );
+        deliveryResults.push(...batchResults);
+      }
+
+      for (const result of deliveryResults) {
+        totalSent += result.sent;
+        totalFailed += result.failed;
+        if (result.sent > 0) deliveredUserIds.push(result.userId);
       }
 
       res.json({
         success: totalSent > 0,
         data: {
           sent: totalSent,
-          failed: totalFailed
+          failed: totalFailed,
+          deliveredUserIds,
         },
         message: `Notification sent to ${totalSent} device(s)`
       });
