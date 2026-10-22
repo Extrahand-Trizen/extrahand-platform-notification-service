@@ -37,7 +37,34 @@ export function usesMobileProjectFcm(input: {
   const data = input.data && typeof input.data === 'object' ? input.data : {};
   const eventKey = normalizeEventKey(data.eventKey ?? data.event_key ?? input.type);
   const action = String(data.action ?? '').trim().toLowerCase();
+  const recipientRole = String(data.recipientRole ?? '').trim().toLowerCase();
 
+  // Mobile roles
+  if (
+    recipientRole === 'customer' ||
+    recipientRole === 'seller' ||
+    recipientRole === 'partner' ||
+    recipientRole === 'helper' ||
+    recipientRole === 'tasker' ||
+    recipientRole === 'poster' ||
+    recipientRole === 'requester'
+  ) {
+    return true;
+  }
+
+  // Lifecycle actions
+  if (
+    action === 'booking_confirmed' ||
+    action === 'task_posted' ||
+    action === 'assigned' ||
+    action === 'apply_qc_order' ||
+    action === 'rate_task' ||
+    action === 'rescheduled'
+  ) {
+    return true;
+  }
+
+  // Mobile event keys
   return (
     eventKey === 'BOOK_NOW_PARTNER_ASSIGNED' ||
     (eventKey === 'TASK_NEARBY' &&
@@ -45,6 +72,19 @@ export function usesMobileProjectFcm(input: {
       action === 'apply_qc_order') ||
     (eventKey === 'TASK_UPDATED' && action === 'assigned') ||
     isPartnerBookNowOffer(data, eventKey)
+    eventKey.startsWith('QC_') ||
+    eventKey.startsWith('BOOK_NOW_') ||
+    eventKey.startsWith('TASK_') ||
+    eventKey.startsWith('APPLICATION_') ||
+    eventKey.startsWith('OFFER_') ||
+    eventKey.startsWith('NEGOTIATION_') ||
+    eventKey.startsWith('PAYMENT_') ||
+    eventKey.startsWith('REFUND_') ||
+    eventKey.startsWith('PAYOUT_') ||
+    eventKey === 'HELPER_ON_THE_WAY' ||
+    eventKey === 'REVIEW_REQUEST' ||
+    eventKey === 'MESSAGE' ||
+    eventKey === 'CHAT'
   );
 }
 
@@ -108,10 +148,17 @@ export function buildPushSoundPayload(input: {
   data?: Record<string, unknown> | null;
 }): {
   android: { priority: 'high'; notification: { sound: string; channelId: string } };
-  apns: { payload: { aps: { sound: string; badge: number } } };
+  apns: {
+    headers: { 'apns-priority': string; 'apns-push-type': string };
+    payload: { aps: { alert: { title: string; body: string }; sound: string; badge: number } };
+  };
 } {
   const data = input.data && typeof input.data === 'object' ? input.data : {};
   const eventKey = normalizeEventKey(data.eventKey ?? data.event_key ?? input.type);
+  const alertText = {
+    title: String(data.title || input.type || 'ExtraHand'),
+    body: String(data.body || ''),
+  };
   const hasNearbyContext =
     typeof data.locationLabel === 'string' ||
     String(data.title ?? '').toLowerCase().includes('nearby') ||
@@ -138,8 +185,13 @@ export function buildPushSoundPayload(input: {
           },
         },
         apns: {
+          headers: {
+            'apns-priority': '10',
+            'apns-push-type': 'alert',
+          },
           payload: {
             aps: {
+              alert: alertText,
               sound: PUSH_BOOK_NOW_RING_SOUND_IOS,
               badge: 1,
             },
@@ -166,8 +218,13 @@ export function buildPushSoundPayload(input: {
         },
       },
       apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
+        },
         payload: {
           aps: {
+            alert: alertText,
             sound: PUSH_NOTIFICATION_SOUND_IOS,
             badge: 1,
           },
@@ -185,8 +242,13 @@ export function buildPushSoundPayload(input: {
       },
     },
     apns: {
+      headers: {
+        'apns-priority': '10',
+        'apns-push-type': 'alert',
+      },
       payload: {
         aps: {
+          alert: alertText,
           sound: 'default',
           badge: 1,
         },

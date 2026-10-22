@@ -147,7 +147,7 @@ export function validateEnv() {
     const hasFirebaseCredentials = hasFirebaseEnvVars || hasFirebaseServiceAccountPath || hasGoogleCredentials || hasServiceAccountFile;
     
     if (!hasFirebaseCredentials && env.NODE_ENV === 'production') {
-      throw new Error('Firebase credentials must be provided in production. Either set environment variables or ensure serviceAccountKey.json exists.');
+      console.warn('⚠️ WARNING: Firebase credentials are not configured in production. FCM pushes will be disabled until credentials are provided in CapRover.');
     }
     
     if (hasServiceAccountFile) {

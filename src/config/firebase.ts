@@ -37,22 +37,26 @@ if (!admin.apps.length) {
     logger.warn('⚠️ Failed to load Firebase credentials from env/file, falling back to ADC');
   }
 
-  if (credential) {
-    admin.initializeApp({ credential });
-  } else {
-    // 3) ADC (GOOGLE_APPLICATION_CREDENTIALS or GCP runtime)
-    try {
-      admin.initializeApp();
-      logger.info('✅ Firebase initialized with Application Default Credentials');
-    } catch (error) {
-      logger.error('❌ Failed to initialize Firebase:', error);
-      throw new Error('Firebase initialization failed. Please provide credentials.');
+  try {
+    if (credential) {
+      admin.initializeApp({ credential });
+      logger.info('✅ Firebase initialized successfully');
+    } else {
+      // 3) ADC (GOOGLE_APPLICATION_CREDENTIALS or GCP runtime)
+      try {
+        admin.initializeApp();
+        logger.info('✅ Firebase initialized with Application Default Credentials');
+      } catch (error) {
+        logger.warn('⚠️ Firebase ADC initialization failed (will run without primary FCM):', error);
+      }
     }
+  } catch (initError) {
+    logger.error('❌ Failed to initialize Firebase Admin SDK:', initError);
   }
 }
 
 // Export auth instance for use in middleware
-export const auth = admin.auth();
+export const auth = admin.apps.length ? admin.auth() : null;
 
 const MOBILE_FIREBASE_APP_NAME = 'extrahand-mobile-firebase';
 let mobileCredential: admin.credential.Credential | undefined;
@@ -104,7 +108,7 @@ if (!mobileFirebaseApp && primaryProjectMatchesMobile) {
 
 export const mobileMessaging = mobileFirebaseApp
   ? admin.messaging(mobileFirebaseApp)
-  : primaryProjectMatchesMobile
+  : primaryProjectMatchesMobile && admin.apps.length
   ? admin.messaging()
   : null;
 

@@ -243,7 +243,9 @@ export class NotificationService {
       const shouldSend = await this.shouldSendNotification(userId, category, 'push');
 
       // WhatsApp is a separate Settings toggle â€” try Dialog even if push is off.
-      fireDialogWhatsAppForPush(userId, notification);
+      if (!notification.skipWhatsApp) {
+        fireDialogWhatsAppForPush(userId, notification);
+      }
 
       if (!shouldSend) {
         logger.info(`Notification skipped - user preferences disabled`, {
@@ -300,27 +302,29 @@ export class NotificationService {
         data: pushData,
       });
 
+      const alertPayload = {
+        title: notification.title,
+        body: notification.body,
+      };
+
       const message = notifeeOwned
         ? {
             data: stringifiedData,
             android: { priority: 'high' as const },
             apns: {
+              headers: {
+                'apns-priority': '10',
+                'apns-push-type': 'alert',
+              },
               payload: {
                 aps: {
                   'content-available': 1,
-                  ...(playCustomSound
-                    ? {}
-                    : {
-                        alert: {
-                          title: notification.title,
-                          body: notification.body,
-                        },
-                        sound: 'default',
-                      }),
+                  alert: alertPayload,
+                  sound:
+                    soundPayload?.apns?.payload?.aps?.sound ||
+                    (playCustomSound ? 'urgent_notify_single_ring.wav' : 'default'),
+                  badge: soundPayload?.apns?.payload?.aps?.badge ?? 1,
                 },
-              },
-              headers: {
-                'apns-priority': '10',
               },
             },
           }
@@ -328,23 +332,56 @@ export class NotificationService {
             notification: {
               title: notification.title,
               body: notification.body,
+              ...(notification.imageUrl ? { imageUrl: notification.imageUrl } : {}),
             },
             data: stringifiedData,
-            ...soundPayload,
+            android: soundPayload.android,
+            apns: {
+              headers: {
+                'apns-priority': '10',
+                'apns-push-type': 'alert',
+              },
+              payload: {
+                aps: {
+                  alert: alertPayload,
+                  sound: soundPayload?.apns?.payload?.aps?.sound || 'default',
+                  badge: soundPayload?.apns?.payload?.aps?.badge ?? 1,
+                },
+              },
+            },
           };
 
       // Send to all tokens (circuit breaker â€” push failures must not break callers)
       const tokenStrings = tokens.map(t => t.token);
-      const useMobileProject = usesMobileProjectFcm({
-        type: notification.type,
-        data: pushData,
-      });
+      const isDevToken = (t: string) => t.startsWith('dev-sim-') || t.startsWith('sim-');
+      const realTokens = tokenStrings.filter(t => !isDevToken(t));
+      const simulatedTokens = tokenStrings.filter(isDevToken);
+
+      if (simulatedTokens.length > 0) {
+        logger.info('[FCM_DELIVERY] Simulated dev tokens detected', {
+          userId,
+          simulatedCount: simulatedTokens.length,
+          realCount: realTokens.length,
+        });
+      }
+
+      if (realTokens.length === 0 && simulatedTokens.length > 0) {
+        return { success: true, sent: simulatedTokens.length, failed: 0 };
+      }
+
+      const hasMobileTokens = tokens.some(t => t.platform === 'ios' || t.platform === 'android');
+      const useMobileProject =
+        hasMobileTokens ||
+        usesMobileProjectFcm({
+          type: notification.type,
+          data: pushData,
+        });
       const mobileProjectId = process.env.FIREBASE_MOBILE_PROJECT_ID || 'extrahand-ca02c';
       const primaryProjectMatchesMobile =
         String(process.env.FIREBASE_PROJECT_ID || '').trim() === mobileProjectId;
       const messaging = useMobileProject
-        ? mobileMessaging || (primaryProjectMatchesMobile ? admin.messaging() : null)
-        : admin.messaging();
+        ? mobileMessaging || (primaryProjectMatchesMobile && admin.apps.length ? admin.messaging() : null)
+        : (admin.apps.length ? admin.messaging() : mobileMessaging);
 
       logger.info('[FCM_DELIVERY] Sender selected', {
         userId,
@@ -354,7 +391,7 @@ export class NotificationService {
         senderMode: useMobileProject ? 'mobile-assignment' : 'primary',
         targetProjectId: useMobileProject ? mobileProjectId : process.env.FIREBASE_PROJECT_ID,
         senderConfigured: Boolean(messaging),
-        tokenCount: tokenStrings.length,
+        tokenCount: realTokens.length,
         dataOnly: notifeeOwned,
       });
 
@@ -368,7 +405,7 @@ export class NotificationService {
             process.env.FIREBASE_MOBILE_CLIENT_EMAIL && process.env.FIREBASE_MOBILE_PRIVATE_KEY,
           ),
         });
-        return { success: false, sent: 0, failed: tokenStrings.length };
+        return { success: false, sent: 0, failed: realTokens.length };
       }
       
       // DEBUG: Log Book Now assignment notifications
@@ -381,13 +418,13 @@ export class NotificationService {
           title: notification.title,
           body: notification.body,
           bookingSource: pushData.bookingSource,
-          tokenCount: tokenStrings.length,
+          tokenCount: realTokens.length,
         });
       }
       const response = await fcmCircuit.runSafe(
         () =>
           messaging.sendEachForMulticast({
-            tokens: tokenStrings,
+            tokens: realTokens,
             ...message,
           }),
         null
@@ -399,7 +436,7 @@ export class NotificationService {
           eventKey: notification.type,
           circuitState: fcmCircuit.getState(),
         });
-        return { success: false, sent: 0, failed: tokenStrings.length };
+        return { success: false, sent: 0, failed: realTokens.length };
       }
 
       const failureCodes = response.responses.reduce<Record<string, number>>((counts, result) => {
@@ -412,7 +449,7 @@ export class NotificationService {
 
       // Update lastActive for successful tokens
       const successfulTokens = response.responses
-        .map((resp, idx) => resp.success ? tokens[idx].token : null)
+        .map((resp, idx) => resp.success ? realTokens[idx] : null)
         .filter(Boolean) as string[];
 
       if (successfulTokens.length > 0) {
@@ -429,11 +466,12 @@ export class NotificationService {
             resp.error?.code === 'messaging/invalid-registration-token' ||
             resp.error?.code === 'messaging/registration-token-not-registered'
           )) {
-            return tokens[idx].token;
+            return realTokens[idx];
           }
           return null;
         })
         .filter(Boolean) as string[];
+
 
       if (invalidTokens.length > 0) {
         await FCMToken.deleteMany({ token: { $in: invalidTokens } });
@@ -803,8 +841,8 @@ export class NotificationService {
             const currentRole = resolvedData.recipientRole;
 
             if ((taskDoc as any).bookingSource === 'book_now') {
-              resolvedData.recipientRole = 'partner';
-              logger.info('[NotificationService] STEP 3 - Role from bookingSource=book_now', { recipientRole: 'partner' });
+              resolvedData.recipientRole = currentRole === 'customer' ? 'customer' : 'partner';
+              logger.info('[NotificationService] STEP 3 - Role from bookingSource=book_now', { currentRole, recipientRole: resolvedData.recipientRole });
             } else if (currentRole === 'helper' || currentRole === 'tasker') {
               resolvedData.recipientRole = 'tasker';
               logger.info('[NotificationService] STEP 3 - Role from explicit currentRole', { currentRole, recipientRole: 'tasker' });
