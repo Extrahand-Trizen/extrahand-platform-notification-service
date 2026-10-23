@@ -23,6 +23,8 @@ import { fireDialogWhatsAppForPush } from '../clients/dialogWhatsAppBridge';
  */
 export type NotificationRoleFilter = 'customer' | 'helper' | 'partner' | 'seller';
 
+const CUSTOMER_APP_IDS = new Set(['com.extrahand', 'com.extrahand.app']);
+
 export class NotificationService {
   /**
    * OTP, payments, and other critical alerts must always appear in-app
@@ -249,7 +251,7 @@ export class NotificationService {
             return false;
           }
           // Explicit customer token or customer app package
-          if (tokenRole === 'customer' || tokenApp === 'com.extrahand') return true;
+          if (tokenRole === 'customer' || CUSTOMER_APP_IDS.has(tokenApp)) return true;
           // Untagged web push tokens are customer web by default
           if (t.platform === 'web' && !tokenRole) return true;
           // Untagged mobile tokens without a role must NOT receive customer notifications,
@@ -260,7 +262,7 @@ export class NotificationService {
         if (norm === 'partner' || norm === 'tasker' || norm === 'helper') {
           // Must NEVER be seller or customer
           if (tokenRole === 'seller' || tokenApp === 'com.extrahand.seller') return false;
-          if (tokenRole === 'customer' || tokenApp === 'com.extrahand') return false;
+          if (tokenRole === 'customer' || CUSTOMER_APP_IDS.has(tokenApp)) return false;
           return (
             tokenRole === 'partner' ||
             tokenRole === 'tasker' ||

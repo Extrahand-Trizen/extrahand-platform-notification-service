@@ -56,8 +56,20 @@ async function run() {
     'customer',
     'com.extrahand'
   );
+  assert(customerTokenDoc.platform === 'android', 'Android customer token remains registered with platform=android');
   assert(customerTokenDoc.role === 'customer', 'Customer token registered with role=customer');
   assert(customerTokenDoc.app === 'com.extrahand', 'Customer token registered with app=com.extrahand');
+
+  const iosCustomerTokenDoc = await NotificationService.registerToken(
+    userId,
+    `token-customer-ios-${Date.now()}`,
+    'ios',
+    'device-ios',
+    undefined,
+    'com.extrahand.app'
+  );
+  assert(iosCustomerTokenDoc.platform === 'ios', 'iOS customer token registered with platform=ios');
+  assert(iosCustomerTokenDoc.app === 'com.extrahand.app', 'iOS customer token registered with app=com.extrahand.app');
 
   // Also simulate an untagged legacy token from an older app version
   const legacyToken = `token-legacy-${Date.now()}`;
@@ -69,7 +81,7 @@ async function run() {
 
   // Total tokens in database for this user
   const allTokens = await NotificationService.getUserFCMTokens(userId);
-  assert(allTokens.length === 4, `All 4 tokens exist for shared userId (got ${allTokens.length})`);
+  assert(allTokens.length === 5, `All 5 tokens exist for shared userId (got ${allTokens.length})`);
 
   // 2. Query tokens for 'seller'
   const sellerTokens = await NotificationService.getUserFCMTokens(userId, 'seller');
@@ -86,18 +98,21 @@ async function run() {
   assert(!customerTokenStrings.includes(sellerTokenDoc.token), 'Customer tokens NEVER includes seller token');
   assert(!customerTokenStrings.includes(partnerTokenDoc.token), 'Customer tokens NEVER includes partner token');
   assert(customerTokenStrings.includes(customerTokenDoc.token), 'Customer tokens includes customer token');
+  assert(customerTokenStrings.includes(iosCustomerTokenDoc.token), 'Customer tokens includes iOS customer app token');
 
   // 4. Query tokens for 'partner' / 'tasker'
   const partnerTokens = await NotificationService.getUserFCMTokens(userId, 'partner');
   const partnerTokenStrings = partnerTokens.map((t) => t.token);
   assert(!partnerTokenStrings.includes(sellerTokenDoc.token), 'Partner tokens NEVER includes seller token');
   assert(!partnerTokenStrings.includes(customerTokenDoc.token), 'Partner tokens NEVER includes customer token');
+  assert(!partnerTokenStrings.includes(iosCustomerTokenDoc.token), 'Partner tokens NEVER includes iOS customer token');
   assert(partnerTokenStrings.includes(partnerTokenDoc.token), 'Partner tokens includes partner token');
 
   const taskerTokens = await NotificationService.getUserFCMTokens(userId, 'tasker');
   const taskerTokenStrings = taskerTokens.map((t) => t.token);
   assert(!taskerTokenStrings.includes(sellerTokenDoc.token), 'Tasker tokens NEVER includes seller token');
   assert(!taskerTokenStrings.includes(customerTokenDoc.token), 'Tasker tokens NEVER includes customer token');
+  assert(!taskerTokenStrings.includes(iosCustomerTokenDoc.token), 'Tasker tokens NEVER includes iOS customer token');
   assert(taskerTokenStrings.includes(partnerTokenDoc.token), 'Tasker tokens includes partner token');
 
   // Cleanup test tokens
