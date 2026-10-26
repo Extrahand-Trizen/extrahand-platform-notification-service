@@ -163,8 +163,12 @@ export class NotificationController {
       const notificationType = type || eventKey;
       const sourceService = req.headers['x-service-name'];
       const resolvedRole = role || recipientRole || data?.recipientRole || data?.role;
+      const notificationBody =
+        data?.action === 'book_now_offer' && typeof body === 'string'
+          ? body.replace(/\s*Accept or reject within 30 minutes\.?$/i, '').trim()
+          : body;
 
-      if (!targetUsers || targetUsers.length === 0 || !notificationType || !title || !body) {
+      if (!targetUsers || targetUsers.length === 0 || !notificationType || !title || !notificationBody) {
         throw new BadRequestError('userId (or recipients array), type (or eventKey), title, and body are required');
       }
 
@@ -199,7 +203,7 @@ const deliveryResults: Array<{
                 eventKey: notificationType,
                 event_key: notificationType,
                 title,
-                body,
+                body: notificationBody,
                 ...(resolvedRole ? { recipientRole: resolvedRole, role: resolvedRole } : {}),
                 ...(targetApp ? { targetApp } : {}),
                 entityType:
@@ -211,7 +215,7 @@ const deliveryResults: Array<{
               const result = await NotificationService.sendPushNotification(uid, {
                 type: notificationType,
                 title,
-                body,
+                body: notificationBody,
                 data: mergedData,
                 category,
               });
@@ -225,7 +229,7 @@ const deliveryResults: Array<{
                   await NotificationService.createInAppNotification({
                     userId: uid,
                     title,
-                    body,
+                    body: notificationBody,
                     type: 'info',
                     category: category || 'taskUpdates',
                     data: mergedData,
