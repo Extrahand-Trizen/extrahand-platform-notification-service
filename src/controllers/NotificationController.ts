@@ -215,6 +215,29 @@ const deliveryResults: Array<{
                 data: mergedData,
                 category,
               });
+              if (
+                result.sent > 0 &&
+                mergedData.action === 'book_now_offer' &&
+                mergedData.bookingSource === 'book_now' &&
+                mergedData.taskId
+              ) {
+                try {
+                  await NotificationService.createInAppNotification({
+                    userId: uid,
+                    title,
+                    body,
+                    type: 'info',
+                    category: category || 'taskUpdates',
+                    data: mergedData,
+                  });
+                } catch (error) {
+                  logger.error('[NOTIFICATION_HANDOFF] Could not persist Book Now offer in notification inbox', {
+                    userId: uid,
+                    taskId: mergedData.taskId,
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                }
+              }
               logger.info('[NOTIFICATION_HANDOFF] Recipient delivery completed', {
                 sourceService,
                 eventKey: notificationType,
