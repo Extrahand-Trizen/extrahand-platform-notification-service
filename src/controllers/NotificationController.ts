@@ -154,7 +154,7 @@ export class NotificationController {
   static async sendNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Support both old format (single userId) and new format (recipients array)
-      const { userId, recipients, type, eventKey, title, body, data, category, role, recipientRole, targetApp } = req.body;
+      const { userId, recipients, type, eventKey, title, body, data, category, role, recipientRole, targetApp, skipWhatsApp } = req.body;
 
       // Accept either userId (single) or recipients (array)
       const targetUsers = Array.from(
@@ -218,6 +218,7 @@ const deliveryResults: Array<{
                 body: notificationBody,
                 data: mergedData,
                 category,
+                skipWhatsApp: skipWhatsApp === true,
               });
               if (
                 result.sent > 0 &&
@@ -295,7 +296,7 @@ const deliveryResults: Array<{
   static async sendBatchNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Support both old format (type) and new format (eventKey)
-      const { userIds, type, eventKey, title, body, data, category } = req.body;
+      const { userIds, type, eventKey, title, body, data, category, skipWhatsApp } = req.body;
 
       if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
         throw new BadRequestError('userIds array is required');
@@ -325,6 +326,7 @@ const deliveryResults: Array<{
         body,
         data: mergedData,
         category,
+        skipWhatsApp: skipWhatsApp === true,
       });
 
       res.json({
