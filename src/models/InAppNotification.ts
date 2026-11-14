@@ -6,6 +6,7 @@ export interface IInAppNotificationDocument extends Document {
   body: string;
   type: string; // 'info' | 'warning' | 'error' | 'success'
   category?: string; // 'taskUpdates', 'payments', 'system', etc.
+  eventId?: string;
   read: boolean;
   readAt?: Date;
   data?: Record<string, any>; // For storing additional metadata
@@ -39,6 +40,9 @@ const InAppNotificationSchema = new Schema<IInAppNotificationDocument>(
       type: String,
       index: true,
     },
+    eventId: {
+      type: String,
+    },
     read: {
       type: Boolean,
       default: false,
@@ -67,6 +71,10 @@ InAppNotificationSchema.index({ userId: 1, read: 1 });
 
 // Create compound index for user + createdAt for sorting
 InAppNotificationSchema.index({ userId: 1, createdAt: -1 });
+InAppNotificationSchema.index(
+  { userId: 1, eventId: 1 },
+  { unique: true, partialFilterExpression: { eventId: { $type: 'string' } } }
+);
 
 // TTL index for auto-deletion of old notifications
 InAppNotificationSchema.index(

@@ -154,7 +154,7 @@ export class NotificationController {
   static async sendNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       // Support both old format (single userId) and new format (recipients array)
-      const { userId, recipients, type, eventKey, title, body, data, category, role, recipientRole, targetApp, skipWhatsApp } = req.body;
+      const { userId, recipients, type, eventKey, eventId, title, body, data, category, role, recipientRole, targetApp, skipWhatsApp } = req.body;
 
       // Accept either userId (single) or recipients (array)
       const targetUsers = Array.from(
@@ -202,6 +202,7 @@ const deliveryResults: Array<{
                 ...(data && typeof data === 'object' ? data : {}),
                 eventKey: notificationType,
                 event_key: notificationType,
+                ...(eventId ? { eventId } : {}),
                 title,
                 body: notificationBody,
                 ...(resolvedRole ? { recipientRole: resolvedRole, role: resolvedRole } : {}),
@@ -233,6 +234,7 @@ const deliveryResults: Array<{
                     body: notificationBody,
                     type: 'info',
                     category: category || 'taskUpdates',
+                    eventId,
                     data: mergedData,
                   });
                 } catch (error) {

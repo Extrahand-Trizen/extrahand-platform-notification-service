@@ -876,6 +876,7 @@ export class NotificationService {
     body: string;
     type?: 'info' | 'warning' | 'error' | 'success';
     category?: string;
+    eventId?: string;
     data?: Record<string, any>;
   }): Promise<any> {
     try {
@@ -1003,19 +1004,33 @@ export class NotificationService {
         }
       }
 
-      const notification = await InAppNotification.create({
+      const notificationData = {
         userId: data.userId,
         title: data.title,
         body: data.body,
         type: data.type || 'info',
         category: data.category,
+        ...(data.eventId ? { eventId: data.eventId } : {}),
         data: resolvedData,
-        read: false
-      });
+        read: false,
+      };
+      const notification = data.eventId
+        ? await InAppNotification.findOneAndUpdate(
+            { userId: data.userId, eventId: data.eventId },
+            {
+              $setOnInsert: {
+                ...notificationData,
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              },
+            },
+            { new: true, upsert: true },
+          )
+        : await InAppNotification.create(notificationData);
 
-      logger.info(`Created in-app notification for user: ${data.userId}`, {
+      logger.info(`Persisted in-app notification for user: ${data.userId}`, {
         notificationId: notification._id,
-        type: data.type
+        type: data.type,
+        eventId: data.eventId,
       });
 
       return notification;
