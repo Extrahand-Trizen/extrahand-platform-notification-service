@@ -7,7 +7,7 @@ export const PUSH_NOTIFICATION_SOUND_IOS = 'urgent_notify_single_ring.wav';
 export const PUSH_ANDROID_MATCH_CHANNEL_ID = 'extrahand_match_alerts_v3';
 export const PUSH_ANDROID_NEARBY_CHANNEL_ID = 'extrahand_nearby_alerts_v3';
 export const PUSH_ANDROID_NEARBY_SKILL_CHANNEL_ID = 'extrahand_nearby_skill_alerts_v3';
-export const PUSH_ANDROID_BOOK_NOW_RING_CHANNEL_ID = 'extrahand_book_now_ring_alerts';
+export const PUSH_ANDROID_BOOK_NOW_RING_CHANNEL_ID = 'extrahand_book_now_ring_alerts_v2';
 
 // Book Now ring sound (15-second looping ring)
 export const PUSH_BOOK_NOW_RING_SOUND_ANDROID = 'urgent_notify_10_seconds_gentle_loop';
