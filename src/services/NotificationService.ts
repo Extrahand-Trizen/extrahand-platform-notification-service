@@ -12,6 +12,7 @@ import {
   usesMobileProjectFcm,
   usesNotifeeOwnedPushDisplay,
 } from '../utils/pushSound';
+import { resolvePushTargetRole } from '../utils/pushTargetRole';
 import { fcmCircuit } from '../utils/CircuitBreaker';
 import { fireDialogWhatsAppForPush } from '../clients/dialogWhatsAppBridge';
 
@@ -314,29 +315,12 @@ export class NotificationService {
         ...(notification.data || {}),
       };
 
-      // Determine targetRole for this push notification
-      let targetRole: string | undefined = undefined;
-      const explicitRole = pushData.recipientRole ?? (notification as any).recipientRole ?? pushData.role;
-      if (explicitRole) {
-        targetRole = String(explicitRole).trim().toLowerCase();
-      } else {
-        const eventKey = String(pushData.eventKey || pushData.type || '').trim().toUpperCase();
-        const cat = String(pushData.category || notification.category || '').trim();
-        if (eventKey === 'QC_ORDER_PLACED' || eventKey === 'QC_STOCK_OUT' || eventKey === 'QC_SHOP_PAUSED') {
-          targetRole = 'seller';
-        } else if (eventKey.startsWith('QC_ORDER_')) {
-          targetRole = 'customer';
-        } else if (
-          eventKey === 'BOOK_NOW_PARTNER_ASSIGNED' ||
-          eventKey.startsWith('HELPER_') ||
-          eventKey.startsWith('TASK_') ||
-          eventKey.startsWith('OFFER_') ||
-          cat === 'recommendedTaskAlerts' ||
-          cat === 'keywordTaskAlerts'
-        ) {
-          targetRole = 'partner';
-        }
-      }
+      const targetRole = resolvePushTargetRole({
+        eventKey: pushData.eventKey || pushData.type,
+        category: pushData.category || notification.category,
+        explicitRole:
+          pushData.recipientRole ?? (notification as any).recipientRole ?? pushData.role,
+      });
 
       // Get user's FCM tokens scoped to the target role
       const tokens = await this.getUserFCMTokens(userId, targetRole);
