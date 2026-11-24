@@ -36,6 +36,14 @@ test('routes payment received and refunds to customer devices', () => {
     resolvePushTargetRole({ eventKey: 'REFUND_PROCESSED', category: 'payments' }),
     'customer',
   );
+  assert.equal(
+    resolvePushTargetRole({ eventKey: 'REFUND_INITIATED', category: 'payments' }),
+    'customer',
+  );
+  assert.equal(
+    resolvePushTargetRole({ eventKey: 'TASK_CANCELLED_CUSTOMER', category: 'taskUpdates' }),
+    'customer',
+  );
 });
 
 test('routes payouts to partner devices', () => {

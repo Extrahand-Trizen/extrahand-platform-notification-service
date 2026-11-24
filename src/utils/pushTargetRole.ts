@@ -26,7 +26,11 @@ export function resolvePushTargetRole({
     eventKey.startsWith('QC_ORDER_') ||
     eventKey === 'HELPER_ON_THE_WAY' ||
     eventKey === 'PAYMENT_RECEIVED' ||
-    eventKey.startsWith('REFUND_')
+    eventKey.startsWith('REFUND_') ||
+    eventKey === 'TASK_CANCELLED_CUSTOMER' ||
+    eventKey.endsWith('_CUSTOMER') ||
+    eventKey === 'REVIEW_REQUEST' ||
+    eventKey === 'TASK_COMPLETED'
   ) {
     return 'customer';
   }
