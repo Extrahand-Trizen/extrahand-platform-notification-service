@@ -26,3 +26,21 @@ test('explicit recipient roles override event defaults', () => {
     'customer',
   );
 });
+
+test('routes payment received and refunds to customer devices', () => {
+  assert.equal(
+    resolvePushTargetRole({ eventKey: 'PAYMENT_RECEIVED', category: 'payments' }),
+    'customer',
+  );
+  assert.equal(
+    resolvePushTargetRole({ eventKey: 'REFUND_PROCESSED', category: 'payments' }),
+    'customer',
+  );
+});
+
+test('routes payouts to partner devices', () => {
+  assert.equal(
+    resolvePushTargetRole({ eventKey: 'PAYOUT_COMPLETED', category: 'payments' }),
+    'partner',
+  );
+});

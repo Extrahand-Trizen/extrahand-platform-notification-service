@@ -225,7 +225,23 @@ export class NotificationService {
    */
   static async getUserFCMTokens(userId: string, targetRole?: string): Promise<IFCMTokenDocument[]> {
     try {
-      const tokens = await FCMToken.find({ userId }).sort({ lastActive: -1 });
+      let tokens = await FCMToken.find({ userId }).sort({ lastActive: -1 });
+
+      // Fallback: If no tokens found and userId looks like a MongoDB ObjectId,
+      // try to resolve to Firebase UID from profiles collection
+      if (tokens.length === 0 && mongoose.isValidObjectId(userId)) {
+        try {
+          const profileDoc = await mongoose.connection
+            .collection('profiles')
+            .findOne({ _id: new mongoose.Types.ObjectId(userId) }, { projection: { uid: 1 } });
+          if (profileDoc?.uid) {
+            tokens = await FCMToken.find({ userId: String(profileDoc.uid) }).sort({ lastActive: -1 });
+          }
+        } catch (resolveErr) {
+          logger.warn('Could not resolve Mongo userId to Firebase UID for tokens:', resolveErr);
+        }
+      }
+
       if (!targetRole) {
         return tokens;
       }

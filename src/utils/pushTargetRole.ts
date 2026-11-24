@@ -22,7 +22,12 @@ export function resolvePushTargetRole({
   ) {
     return 'seller';
   }
-  if (eventKey.startsWith('QC_ORDER_') || eventKey === 'HELPER_ON_THE_WAY') {
+  if (
+    eventKey.startsWith('QC_ORDER_') ||
+    eventKey === 'HELPER_ON_THE_WAY' ||
+    eventKey === 'PAYMENT_RECEIVED' ||
+    eventKey.startsWith('REFUND_')
+  ) {
     return 'customer';
   }
   if (
@@ -30,6 +35,7 @@ export function resolvePushTargetRole({
     eventKey.startsWith('HELPER_') ||
     eventKey.startsWith('TASK_') ||
     eventKey.startsWith('OFFER_') ||
+    eventKey.startsWith('PAYOUT_') ||
     category === 'recommendedTaskAlerts' ||
     category === 'keywordTaskAlerts'
   ) {
